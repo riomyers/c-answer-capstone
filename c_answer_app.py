@@ -83,6 +83,10 @@ st.markdown("""
 
 # --- HELPER FUNCTIONS ---
 
+# --- FIXED: Restored Missing Spacer Function ---
+def spacer(height=20):
+    st.markdown(f"<div style='height: {height}px'></div>", unsafe_allow_html=True)
+
 def clean_text(text):
     """Cleans text for PDF generation."""
     if not text: return ""
@@ -151,7 +155,7 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     
     # Profile Box
     pdf.set_fill_color(240, 240, 240) 
-    pdf.rect(10, pdf.get_y(), 190, 25, 'F') # Slightly taller for more details
+    pdf.rect(10, pdf.get_y(), 190, 25, 'F') 
     pdf.set_xy(12, pdf.get_y() + 5)
     
     pdf.set_font("Arial", 'B', 12)
@@ -332,10 +336,9 @@ if 'patient_profile_str' not in st.session_state: st.session_state.patient_profi
 if 'search_performed' not in st.session_state: st.session_state.search_performed = False
 if 'user_zip' not in st.session_state: st.session_state.user_zip = ""
 
-# FORM DEFAULTS - FIXED (Empty by Default)
+# FORM DEFAULTS
 if 'form_diagnosis' not in st.session_state: st.session_state.form_diagnosis = ""
 if 'form_metastasis' not in st.session_state: st.session_state.form_metastasis = ""
-# FIXED: Age defaults to None
 if 'form_age' not in st.session_state: st.session_state.form_age = None 
 if 'form_sex' not in st.session_state: st.session_state.form_sex = "Select..."
 if 'form_kras' not in st.session_state: st.session_state.form_kras = False
@@ -381,7 +384,6 @@ with tab_search:
                             st.session_state.form_diagnosis = extracted.get("diagnosis", "")
                             st.session_state.form_metastasis = extracted.get("metastasis", "")
                             
-                            # Safely handle age extraction
                             extracted_age = extracted.get("age", None)
                             if extracted_age and str(extracted_age).isdigit():
                                 st.session_state.form_age = int(extracted_age)
@@ -390,8 +392,6 @@ with tab_search:
                                 
                             st.session_state.form_sex = extracted.get("sex", "Select...")
                             st.session_state.form_kras = extracted.get("kras_wild_type", False)
-                            
-                            # New fields
                             st.session_state.form_ecog = extracted.get("ecog", "0 - Fully Active")
                             st.session_state.form_lines = extracted.get("prior_lines", "None (1st Line)")
                             st.session_state.form_msi = extracted.get("msi", "Unknown")
@@ -409,7 +409,6 @@ with tab_search:
             
             c1, c2, c3 = st.columns(3)
             with c1: 
-                # FIXED: value=None allows placeholder to show
                 age = st.number_input("Age", value=st.session_state.form_age, placeholder="e.g. 35", step=1)
             with c2: 
                 sex = st.selectbox("Sex", ["Select...", "Male", "Female"], index=0 if st.session_state.form_sex == "Select..." else (1 if st.session_state.form_sex=="Male" else 2))
@@ -427,7 +426,10 @@ with tab_search:
             with c7: kras = st.checkbox("KRAS Wild-type", value=st.session_state.form_kras)
             with c8: phase1 = st.checkbox("Exclude Phase 1", value=False)
             
-            spacer(10)
+            # --- FIXED: SPACER FUNCTION CALL ---
+            spacer(20) 
+            
+            # --- FIXED: SUBMIT BUTTON INSIDE FORM ---
             submitted = st.form_submit_button("Find Matching Trials", type="primary")
 
     # 3. SEARCH EXECUTION
@@ -450,7 +452,7 @@ with tab_search:
             st.session_state.form_lines = lines
             st.session_state.form_msi = msi
             
-            # Handle empty fields for display logic
+            # Use defaults for display if empty
             age_s = str(age) if age else "Unknown"
             sex_s = sex if sex != "Select..." else "Unknown"
             zip_s = zip_input if zip_input else "Not provided"
@@ -537,7 +539,6 @@ with tab_insights:
     if st.session_state.treatment_report:
         st.info(f"🧠 AI-Generated Landscape for: **{st.session_state.form_diagnosis}**")
         st.markdown(st.session_state.treatment_report)
-        st.caption("Source: AI Synthesis of General Medical Knowledge (Llama 3.3). Verify with NCCN Guidelines.")
     else:
         st.write("👈 Perform a search in the 'Trial Search' tab to generate a treatment landscape report.")
 
