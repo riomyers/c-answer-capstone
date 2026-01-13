@@ -1,7 +1,8 @@
 import streamlit as st
 import requests
+import pandas as pd
 from fpdf import FPDF
-from ai_agent import analyze_trial_eligibility, generate_treatment_report
+from ai_agent import analyze_trial_eligibility, generate_treatment_report, compare_trials
 
 # --- CONFIGURATION ---
 st.set_page_config(
@@ -54,119 +55,80 @@ def spacer(height=20):
     st.markdown(f"<div style='height: {height}px'></div>", unsafe_allow_html=True)
 
 def clean_text(text):
-    """
-    Cleans text for FPDF:
-    1. Replaces smart quotes/dashes.
-    2. STRIPS ALL MARKDOWN (#, *, __) so it looks like plain text.
-    """
     if not text: return ""
-    
-    # 1. Remove Markdown artifacts
-    text = text.replace('###', '')   # Remove triple hashes
-    text = text.replace('##', '')    # Remove double hashes
-    text = text.replace('#', '')     # Remove single hashes
-    text = text.replace('**', '')    # Remove bolding stars
-    text = text.replace('__', '')    # Remove italics underscores
-    
-    # 2. Fix typography for PDF
-    replacements = {
-        '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
-        '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'
-    }
-    for char, replacement in replacements.items():
-        text = text.replace(char, replacement)
-    
-    # 3. Encode safe
+    text = text.replace('###', '').replace('##', '').replace('#', '').replace('**', '').replace('__', '')
+    replacements = {'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'}
+    for char, replacement in replacements.items(): text = text.replace(char, replacement)
     return text.encode('latin-1', 'replace').decode('latin-1')
 
-def create_pdf(saved_trials, patient_info, treatment_report):
-    """Generates a professional PDF report with clear section spacing."""
+def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # --- HEADER ---
+    # Header
     pdf.set_font("Arial", 'B', 24)
     pdf.cell(0, 10, "C-Answer", ln=True, align='C')
     pdf.set_font("Arial", 'I', 12)
     pdf.cell(0, 10, "Intelligent Clinical Trial & Recovery Plan", ln=True, align='C')
     pdf.ln(10)
     
-    # --- PATIENT PROFILE ---
+    # Profile
     pdf.set_fill_color(240, 240, 240) 
     pdf.rect(10, pdf.get_y(), 190, 20, 'F') 
     pdf.set_xy(12, pdf.get_y() + 5)
-    
     pdf.set_font("Arial", 'B', 12)
     pdf.write(6, "Patient Profile: ")
     pdf.set_font("Arial", '', 12)
     pdf.write(6, clean_text(patient_info))
     pdf.ln(20)
     
-    # --- SECTION 1: TREATMENT LANDSCAPE ---
+    # 1. Landscape
     if treatment_report:
         pdf.set_font("Arial", 'B', 16)
-        pdf.cell(0, 10, "1. Treatment Landscape Analysis", ln=True)
+        pdf.cell(0, 10, "1. Treatment Landscape", ln=True)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
-        
-        # SMART PARSING LOOP v2 (Fixed Logic)
         lines = treatment_report.split('\n')
         for line in lines:
             line = clean_text(line).strip()
-            if not line:
-                continue
-            
-            # IMPROVED HEADER DETECTION:
-            # If a line is SHORT (<60 chars), does NOT end in a period, 
-            # and is NOT a bullet point, we treat it as a sub-header.
-            is_header = (len(line) < 60) and (not line.endswith('.')) and (not line.startswith('*'))
-            
-            if is_header:
-                pdf.ln(8)  # Add 8mm of vertical space BEFORE the header
-                pdf.set_font("Arial", 'B', 11) # Make it Bold
+            if not line: continue
+            if (len(line) < 60 and not line.endswith('.') and not line.startswith('*')):
+                pdf.ln(6)
+                pdf.set_font("Arial", 'B', 11)
                 pdf.multi_cell(0, 6, line)
             else:
-                pdf.set_font("Arial", '', 11) # Regular text
+                pdf.set_font("Arial", '', 11)
                 pdf.multi_cell(0, 6, line)
-        
         pdf.ln(10)
         
-    # --- SECTION 2: SAVED TRIALS ---
+    # 2. Comparison Table (Simplified for PDF)
+    if comparison_report:
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(0, 10, "2. AI Comparison of Selected Trials", ln=True)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
+        pdf.ln(5)
+        pdf.set_font("Arial", '', 10)
+        # We just dump the markdown text for now as tables in FPDF are complex
+        pdf.multi_cell(0, 6, clean_text(comparison_report))
+        pdf.ln(10)
+        
+    # 3. Trial Details
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "2. Shortlisted Clinical Trials", ln=True)
+    pdf.cell(0, 10, "3. Trial Details", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
     pdf.ln(5)
     
     for nct_id, details in saved_trials.items():
-        # Trial Title 
         pdf.set_text_color(0, 51, 102) 
         pdf.set_font("Arial", 'B', 12)
         pdf.multi_cell(0, 8, f"{clean_text(details['title'])}")
-        
-        # ID 
         pdf.set_text_color(100, 100, 100)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 6, f"Trial ID: {nct_id}", ln=True)
-        
-        # Reset to Black 
         pdf.set_text_color(0, 0, 0)
-        
-        # Summary
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") 
-        pdf.ln(2)
-        
-        # AI Analysis Box
-        if details.get('match_status'):
-            pdf.set_fill_color(245, 255, 250) 
-            pdf.set_font("Arial", 'B', 10)
-            pdf.cell(0, 8, "  AI Match Analysis:", ln=True, fill=True)
-            
-            pdf.set_font("Arial", '', 10)
-            status_text = details['match_status'].replace("Status: ", "")
-            pdf.multi_cell(0, 6, clean_text(status_text), fill=True)
-        
         pdf.ln(8)
         
     return pdf.output(dest='S').encode('latin-1')
@@ -176,7 +138,7 @@ def fetch_clinical_trials(condition, status="RECRUITING"):
     params = {
         "query.cond": condition,
         "filter.overallStatus": status,
-        "pageSize": 40,
+        "pageSize": 50, # Increased for better charts
         "sort": "LastUpdateSubmitDate"
     }
     try:
@@ -186,11 +148,52 @@ def fetch_clinical_trials(condition, status="RECRUITING"):
     except Exception:
         return {}
 
+# --- VISUAL ANALYTICS FUNCTION ---
+def display_analytics(studies):
+    if not studies: return
+
+    # Extract Data for Charts
+    phases = []
+    sponsors = []
+    
+    for study in studies:
+        protocol = study.get('protocolSection', {})
+        design = protocol.get('designModule', {})
+        ident = protocol.get('identificationModule', {})
+        
+        # Get Phase
+        phase_list = design.get('phases', ['Not Specified'])
+        phases.append(phase_list[0] if phase_list else 'Not Specified')
+        
+        # Get Sponsor Class
+        org = ident.get('organization', {})
+        sponsors.append(org.get('class', 'Unknown'))
+    
+    # Create DataFrames
+    df_phase = pd.DataFrame(phases, columns=["Phase"])
+    df_sponsor = pd.DataFrame(sponsors, columns=["Sponsor"])
+    
+    # Display Charts
+    st.markdown("### 📊 Market Intelligence")
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.caption("Distribution by Trial Phase")
+        # Simple bar chart of counts
+        st.bar_chart(df_phase['Phase'].value_counts())
+        
+    with c2:
+        st.caption("Sponsorship (Industry vs. Public)")
+        st.bar_chart(df_sponsor['Sponsor'].value_counts())
+    
+    spacer(20)
+
 # --- STATE MANAGEMENT ---
 if 'studies' not in st.session_state: st.session_state.studies = []
 if 'analysis_results' not in st.session_state: st.session_state.analysis_results = {}
 if 'saved_trials' not in st.session_state: st.session_state.saved_trials = {}
 if 'treatment_report' not in st.session_state: st.session_state.treatment_report = ""
+if 'comparison_report' not in st.session_state: st.session_state.comparison_report = ""
 if 'patient_profile_str' not in st.session_state: st.session_state.patient_profile_str = ""
 if 'search_performed' not in st.session_state: st.session_state.search_performed = False
 
@@ -212,7 +215,6 @@ tab_search, tab_insights, tab_saved = st.tabs(["🔍 Trial Search", "📊 Treatm
 # TAB 1: SEARCH
 # ==========================================
 with tab_search:
-    # SEARCH PANEL
     is_expanded = not st.session_state.search_performed
     with st.expander("Configure Patient Profile", expanded=is_expanded):
         with st.form("patient_form"):
@@ -237,6 +239,7 @@ with tab_search:
         else:
             st.session_state.search_performed = True
             st.session_state.analysis_results = {}
+            st.session_state.comparison_report = "" # Reset comparison
             
             age_s = str(age) if age else "Unknown"
             sex_s = sex if sex != "Select..." else "Unknown"
@@ -253,9 +256,12 @@ with tab_search:
             
             st.rerun()
 
-    # RESULTS LIST
+    # ANALYTICS & RESULTS
     trials = st.session_state.studies
     if trials:
+        # SHOW CHARTS
+        display_analytics(trials)
+        
         col1, col2 = st.columns([3, 1])
         col1.markdown(f"**Found {len(trials)} recruiting trials**")
         
@@ -320,7 +326,7 @@ with tab_insights:
         st.write("👈 Perform a search in the 'Trial Search' tab to generate a treatment landscape report.")
 
 # ==========================================
-# TAB 3: SAVED REPORT
+# TAB 3: SAVED REPORT & COMPARATOR
 # ==========================================
 with tab_saved:
     saved = st.session_state.saved_trials
@@ -330,18 +336,32 @@ with tab_saved:
     if saved:
         st.success(f"You have saved {len(saved)} trials.")
         
+        # COMPARATOR BUTTON
+        if len(saved) > 1:
+            if st.button("⚖️ Compare Selected Trials (AI)", type="primary"):
+                with st.spinner("Generating comparison matrix..."):
+                    st.session_state.comparison_report = compare_trials(saved)
+        
+        # DISPLAY COMPARISON IF EXISTS
+        if st.session_state.comparison_report:
+            st.markdown("---")
+            st.markdown("#### ⚖️ AI Comparison Matrix")
+            st.markdown(st.session_state.comparison_report)
+            st.markdown("---")
+
+        # PDF DOWNLOAD
         pdf_bytes = create_pdf(
             saved, 
             st.session_state.patient_profile_str, 
-            st.session_state.treatment_report
+            st.session_state.treatment_report,
+            st.session_state.comparison_report
         )
         
         st.download_button(
             label="📄 Download PDF Report for Doctor",
             data=pdf_bytes,
             file_name="C-Answer_Report.pdf",
-            mime="application/pdf",
-            type="primary"
+            mime="application/pdf"
         )
         
         st.markdown("---")
@@ -357,6 +377,6 @@ with tab_saved:
         #### How to create your report:
         1. Go to the **🔍 Trial Search** tab.
         2. Run a search for your condition.
-        3. Click the **Save ⭐** button on any trial you want to discuss with your doctor.
-        4. Return here to download a neat **PDF summary** of your selected options.
+        3. Click the **Save ⭐** button on any trial.
+        4. Return here to compare them side-by-side.
         """)
