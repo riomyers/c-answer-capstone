@@ -61,9 +61,6 @@ def analyze_trial_eligibility(criteria_text, patient_profile):
         return f"Error: {str(e)}"
 
 def generate_treatment_report(patient_profile):
-    """
-    Generates a structured standard of care report.
-    """
     client = get_groq_client()
     if not client: return "Error: API Key missing."
 
@@ -71,14 +68,14 @@ def generate_treatment_report(patient_profile):
     You are a senior research oncologist. Generate a summary of the Treatment Landscape for this patient.
     
     STRICT STRUCTURE REQUIRED:
-    You must output your response using exactly these three Markdown headers:
-    1. **Standard First-Line Treatments** (or Next-Line if patient has prior therapy)
-    2. **Targeted Therapies** (Reference specific mutations like KRAS/BRAF if present)
+    Output using exactly these three Markdown headers:
+    1. **Standard First-Line Treatments** (or Next-Line if prior therapy exists)
+    2. **Targeted Therapies** (Reference mutations like KRAS/BRAF if present)
     3. **Emerging Approaches** (Trials, Immunotherapy, Vaccines)
     
     CONTENT RULES:
-    - Personalize the advice based on the Patient Profile (Age, ECOG, MSI Status).
-    - If MSI-High, heavily emphasize Immunotherapy (Keytruda/Opdivo).
+    - Personalize based on the Patient Profile (Age, ECOG, MSI Status).
+    - If MSI-High, emphasize Immunotherapy.
     - Keep it concise, hopeful, and medically precise.
     """
     
@@ -93,6 +90,9 @@ def generate_treatment_report(patient_profile):
         return f"Error: {str(e)}"
 
 def compare_trials(saved_trials_dict):
+    """
+    Generates a clear, spaced-out comparison of trials using Markdown separators.
+    """
     client = get_groq_client()
     if not client: return "Error: API Key missing."
     
@@ -100,9 +100,22 @@ def compare_trials(saved_trials_dict):
     for nct_id, details in saved_trials_dict.items():
         trials_text += f"\n--- TRIAL {nct_id} ---\nTitle: {details['title']}\nSummary: {details['summary'][:500]}...\n"
 
+    # --- UPDATED PROMPT FOR BETTER SPACING ---
     system_prompt = """
-    Compare these trials in a list format (NO TABLES).
-    For each, output: [Trial ID], * Intervention, * Phase, * Benefit, * Burden, * Verdict.
+    You are an oncologist helping a patient decide between clinical trials.
+    Compare the provided trials in a clean, spaced-out format.
+    
+    For EACH trial, output a block exactly like this:
+    
+    ---
+    ### 🔬 [Trial ID]
+    * **Intervention**: [Type of Drug/Therapy]
+    * **Phase**: [Phase 1/2/3]
+    * **Key Benefit**: [1 sentence on why this is good]
+    * **Patient Burden**: [Low/Med/High] (e.g. oral pill vs weekly IV)
+    * **My Verdict**: [1 clear sentence recommendation]
+    
+    (Ensure there is a '---' separator between every trial so they are visually distinct).
     """
 
     try:
