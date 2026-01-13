@@ -90,20 +90,18 @@ def spacer(height=20):
 
 def clean_text(text):
     """
-    Cleans text for FPDF generation. 
-    Removes Markdown artifacts and replaces non-latin characters.
+    Ultra-aggressive cleaning for FPDF to prevent artifacts.
     """
     if not text:
         return ""
     
-    # Remove Markdown headers/bolding
-    text = text.replace('###', '')
-    text = text.replace('##', '')
-    text = text.replace('#', '')
-    text = text.replace('**', '')
-    text = text.replace('__', '')
+    # 1. Remove Markdown
+    text = text.replace('###', '').replace('##', '').replace('#', '').replace('**', '').replace('__', '')
     
-    # Typography Replacements (Fixes ? characters in PDF)
+    # 2. Normalize Whitespace (Fixes hidden non-breaking spaces)
+    text = text.replace('\u00A0', ' ').replace('\u200B', '')
+    
+    # 3. Typographical Replacements
     replacements = {
         '\u2018': "'", 
         '\u2019': "'", 
@@ -111,22 +109,18 @@ def clean_text(text):
         '\u201d': '"',
         '\u2013': '-', 
         '\u2014': '-',
-        '\u2022': '-',  # Bullet -> Hyphen
-        '•': '-',       # Bullet -> Hyphen
+        '\u2022': '-',  
+        '•': '-',       
         '\u2026': '...',
-        '\u00A0': ' '
+        '?': '-' # Force replace rogue question marks if they persist in specific contexts
     }
     for char, replacement in replacements.items():
         text = text.replace(char, replacement)
     
-    # Safe Encode
+    # 4. Final Safe Encode
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 def calculate_nearest_site(user_zip, locations):
-    """
-    Finds the closest study site to the user's zip code using pgeocode.
-    Returns: (Distance, Facility Name, City, State, Map URL)
-    """
     if not user_zip or not locations:
         return None, None, None, None, None
         
@@ -150,18 +144,13 @@ def calculate_nearest_site(user_zip, locations):
 
         if nearest_loc and min_km != float('inf'):
             miles = int(min_km * 0.621371)
-            
             facility = nearest_loc.get('facility', 'Study Site')
             city = nearest_loc.get('city', '')
             state = nearest_loc.get('state', '')
             zip_code = nearest_loc.get('zip', '')
-            
-            # Smart Navigation Link
             query = f"{facility}, {city}, {state} {zip_code}".replace(" ", "+")
             maps_url = f"https://www.google.com/maps/search/?api=1&query={query}"
-            
             return miles, facility, city, state, maps_url
-            
     except Exception:
         return None, None, None, None, None
         
@@ -169,8 +158,9 @@ def calculate_nearest_site(user_zip, locations):
 
 def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     """
-    Generates a professional PDF report.
-    Includes Dynamic Sizing for the Profile Box and Safety Checks for Page Breaks.
+    Generates a clean PDF report. 
+    REMOVED: Grey box background (caused layout issues).
+    FIXED: Question mark artifacts.
     """
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -183,23 +173,12 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf.cell(0, 10, "Intelligent Clinical Trial & Recovery Plan", ln=True, align='C')
     pdf.ln(10)
     
-    # --- PATIENT PROFILE (Dynamic Height) ---
-    pdf.set_font("Arial", '', 10)
-    clean_profile = clean_text(patient_info)
-    
-    # Calculate required height approx (chars per line ~95)
-    num_lines = max(1, math.ceil(len(clean_profile) / 95))
-    box_height = (num_lines * 5) + 20  # Height based on text + padding
-    
-    pdf.set_fill_color(240, 240, 240) 
-    pdf.rect(10, pdf.get_y(), 190, box_height, 'F') 
-    
-    pdf.set_xy(12, pdf.get_y() + 5)
+    # --- PATIENT PROFILE (Clean Text Only) ---
     pdf.set_font("Arial", 'B', 12)
-    pdf.write(6, "Patient Profile Summary:")
-    pdf.ln(8)
+    pdf.cell(0, 8, "Patient Profile Summary:", ln=True)
+    
     pdf.set_font("Arial", '', 10)
-    pdf.multi_cell(0, 5, clean_profile)
+    pdf.multi_cell(0, 6, clean_text(patient_info))
     pdf.ln(10)
     
     # --- 1. TREATMENT LANDSCAPE ---
@@ -231,7 +210,6 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         
     # --- 2. AI COMPARISON ---
     if comparison_report:
-        # Force page break if low on space
         if pdf.get_y() > 240:
             pdf.add_page()
             
@@ -241,7 +219,9 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         pdf.ln(5)
         
         pdf.set_font("Arial", '', 10)
-        pdf.multi_cell(0, 6, clean_text(comparison_report))
+        # Replacing the specific pattern "? [NCT..." if it occurs
+        clean_comp = clean_text(comparison_report).replace('? [', '- [')
+        pdf.multi_cell(0, 6, clean_comp)
         pdf.ln(10)
         
     # --- 3. TRIAL DETAILS ---
@@ -254,7 +234,6 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf.ln(5)
     
     for nct_id, details in saved_trials.items():
-        # Page Break Check
         if pdf.get_y() > 250:
             pdf.add_page()
         
@@ -276,7 +255,6 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         
         # Match Analysis Box
         if details.get('match_status'):
-            # Only start this box if we have space, otherwise page break
             if pdf.get_y() > 260:
                 pdf.add_page()
             
@@ -288,6 +266,7 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
             status_text = details['match_status'].replace("Status: ", "")
             pdf.multi_cell(0, 5, clean_text(status_text), fill=True)
         
+        # Removed Extra Spacing Here
         pdf.ln(5)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
@@ -310,9 +289,7 @@ def fetch_clinical_trials(condition, status="RECRUITING"):
         return {}
 
 def render_trial_card(trial):
-    """
-    Renders a single trial card. Uses 'dist_data' to display navigation link.
-    """
+    """Renders a single trial card."""
     protocol = trial.get('protocolSection', {})
     id_mod = protocol.get('identificationModule', {})
     desc_mod = protocol.get('descriptionModule', {})
@@ -327,10 +304,8 @@ def render_trial_card(trial):
     dist_str = ""
     
     if dist_data:
-        # Show Facility Name (Truncated) + Distance
         fac_name = dist_data['facility']
         if len(fac_name) > 30: fac_name = fac_name[:30] + "..."
-        
         dist_str = f"<a href='{dist_data['url']}' target='_blank' class='distance-badge'>📍 {fac_name} ({dist_data['miles']} mi)</a>"
     
     with st.expander(f"{title}"):
@@ -422,7 +397,6 @@ with tab_search:
     # 1. AUTO-FILL MODULE
     with st.expander("📄 Auto-Fill from Medical Records (Optional)", expanded=is_expanded):
         uploaded_files = st.file_uploader("Upload Pathology Reports (PDF)", type="pdf", accept_multiple_files=True)
-        # Manual Process Button to prevent loops
         if uploaded_files:
             if st.button("🚀 Extract Data from Files"):
                 with st.spinner("Analyzing documents & Extracting biomarkers..."):
@@ -438,7 +412,6 @@ with tab_search:
                             st.session_state.form_diagnosis = extracted.get("diagnosis", "")
                             st.session_state.form_metastasis = extracted.get("metastasis", "")
                             
-                            # Safely handle age extraction
                             extracted_age = extracted.get("age", None)
                             if extracted_age and str(extracted_age).isdigit():
                                 st.session_state.form_age = int(extracted_age)
@@ -477,7 +450,6 @@ with tab_search:
             with c6: msi = st.selectbox("MSI/MMR Status", ["Unknown", "MSS (Stable)", "MSI-High (Instable)"], index=0)
             
             st.write("**Biomarkers & Filters**")
-            # [1,1,2] Ratio for tighter spacing
             c7, c8, _ = st.columns([1, 1, 2])
             with c7: kras = st.checkbox("KRAS Wild-type", value=st.session_state.form_kras)
             with c8: phase1 = st.checkbox("Exclude Phase 1", value=False)
@@ -505,7 +477,7 @@ with tab_search:
             st.session_state.form_lines = lines
             st.session_state.form_msi = msi
             
-            # Use defaults for display if empty
+            # Handle empty fields for display logic
             age_s = str(age) if age else "Unknown"
             sex_s = sex if sex != "Select..." else "Unknown"
             zip_s = zip_input if zip_input else "Not provided"
