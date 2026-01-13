@@ -86,11 +86,9 @@ st.markdown("""
 # --- HELPER FUNCTIONS ---
 
 def spacer(height=20):
-    """Adds vertical spacing."""
     st.markdown(f"<div style='height: {height}px'></div>", unsafe_allow_html=True)
 
 def clean_text(text):
-    """Cleans text for PDF generation."""
     if not text: return ""
     text = text.replace('###', '').replace('##', '').replace('#', '').replace('**', '').replace('__', '')
     replacements = {'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'}
@@ -98,10 +96,6 @@ def clean_text(text):
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 def calculate_nearest_site(user_zip, locations):
-    """
-    Calculates distance to nearest site and returns navigation link.
-    Returns: (miles, facility_name, city, state, google_maps_url)
-    """
     if not user_zip or not locations:
         return None, None, None, None, None
         
@@ -143,7 +137,6 @@ def calculate_nearest_site(user_zip, locations):
     return None, None, None, None, None
 
 def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
-    """Generates the PDF report with safety checks for page breaks."""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -394,8 +387,6 @@ with tab_search:
                                 
                             st.session_state.form_sex = extracted.get("sex", "Select...")
                             st.session_state.form_kras = extracted.get("kras_wild_type", False)
-                            
-                            # New fields
                             st.session_state.form_ecog = extracted.get("ecog", "0 - Fully Active")
                             st.session_state.form_lines = extracted.get("prior_lines", "None (1st Line)")
                             st.session_state.form_msi = extracted.get("msi", "Unknown")
@@ -426,13 +417,14 @@ with tab_search:
             with c6: msi = st.selectbox("MSI/MMR Status", ["Unknown", "MSS (Stable)", "MSI-High (Instable)"], index=0)
             
             st.write("**Biomarkers & Filters**")
-            # UPDATED COLUMN LAYOUT FOR TIGHTER SPACING
             c7, c8, _ = st.columns([1, 1, 2])
             with c7: kras = st.checkbox("KRAS Wild-type", value=st.session_state.form_kras)
             with c8: phase1 = st.checkbox("Exclude Phase 1", value=False)
             
-            # SPACER AND SUBMIT BUTTON
+            # --- FIXED: SPACER FUNCTION CALL ---
             spacer(20) 
+            
+            # --- FIXED: SUBMIT BUTTON INSIDE FORM ---
             submitted = st.form_submit_button("Find Matching Trials", type="primary")
 
     # 3. SEARCH EXECUTION
