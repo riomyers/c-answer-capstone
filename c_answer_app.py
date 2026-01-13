@@ -20,20 +20,6 @@ st.markdown("""
     
     [data-testid="InputInstructions"] { display: none !important; }
     
-    /* Tabs Styling */
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        white-space: pre-wrap;
-        background-color: transparent;
-        border-radius: 4px 4px 0px 0px;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-        font-family: 'Lato', sans-serif;
-        font-weight: 600;
-    }
-    
     div.stExpander {
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 12px;
@@ -68,21 +54,12 @@ def spacer(height=20):
     st.markdown(f"<div style='height: {height}px'></div>", unsafe_allow_html=True)
 
 def clean_text(text):
-    """
-    Cleans text for FPDF:
-    1. Replaces smart quotes/dashes.
-    2. STRIPS ALL MARKDOWN (#, *, __) so it looks like plain text.
-    """
+    """Basic character cleaning for FPDF."""
     if not text: return ""
+    # Remove markdown formatting characters but keep content
+    text = text.replace('**', '').replace('__', '').replace('###', '')
     
-    # 1. Remove Markdown artifacts
-    text = text.replace('###', '')   # Remove triple hashes
-    text = text.replace('##', '')    # Remove double hashes
-    text = text.replace('#', '')     # Remove single hashes
-    text = text.replace('**', '')    # Remove bolding stars
-    text = text.replace('__', '')    # Remove italics underscores
-    
-    # 2. Fix typography for PDF
+    # Fix standard typography issues
     replacements = {
         '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
         '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'
@@ -90,62 +67,96 @@ def clean_text(text):
     for char, replacement in replacements.items():
         text = text.replace(char, replacement)
     
-    # 3. Encode safe
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 def create_pdf(saved_trials, patient_info, treatment_report):
-    """Generates a PDF report including Landscape and Saved Trials."""
+    """
+    Generates a professional PDF report.
+    Uses 'Smart Parsing' to bold headers and format lists dynamically.
+    """
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Title
-    pdf.set_font("Arial", 'B', 20)
-    pdf.cell(0, 10, "C-Answer: Patient Care Plan", ln=True, align='C')
+    # --- HEADER ---
+    pdf.set_font("Arial", 'B', 24)
+    pdf.cell(0, 10, "C-Answer", ln=True, align='C')
+    pdf.set_font("Arial", 'I', 12)
+    pdf.cell(0, 10, "Intelligent Clinical Trial & Recovery Plan", ln=True, align='C')
     pdf.ln(10)
     
-    # Patient Profile
-    pdf.set_font("Arial", 'I', 12)
-    pdf.multi_cell(0, 10, f"Patient Profile: {clean_text(patient_info)}")
-    pdf.ln(5)
+    # --- PATIENT PROFILE ---
+    pdf.set_fill_color(240, 240, 240) # Light Gray Background
+    pdf.rect(10, pdf.get_y(), 190, 20, 'F') # Gray box
+    pdf.set_xy(12, pdf.get_y() + 5)
     
-    # SECTION 1: TREATMENT LANDSCAPE
+    pdf.set_font("Arial", 'B', 12)
+    pdf.write(6, "Patient Profile: ")
+    pdf.set_font("Arial", '', 12)
+    pdf.write(6, clean_text(patient_info))
+    pdf.ln(20)
+    
+    # --- SECTION 1: TREATMENT LANDSCAPE ---
     if treatment_report:
         pdf.set_font("Arial", 'B', 16)
-        pdf.cell(0, 10, "1. Suggested Treatment Landscape", ln=True)
+        pdf.cell(0, 10, "1. Treatment Landscape Analysis", ln=True)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Underline
         pdf.ln(5)
         
-        pdf.set_font("Arial", '', 11)
-        # Using clean_text removes the # and ** automatically
-        pdf.multi_cell(0, 6, clean_text(treatment_report))
+        # SMART PARSING LOOP
+        # We split the report into lines and check each one
+        lines = treatment_report.split('\n')
+        for line in lines:
+            line = clean_text(line).strip()
+            if not line:
+                continue
+            
+            # Detect Headers (Lines starting with Numbers "1." or "2.")
+            if (line[0].isdigit() and line[1] == '.') or line.isupper():
+                pdf.ln(4) # Extra space before header
+                pdf.set_font("Arial", 'B', 11) # Bold for headers
+                pdf.multi_cell(0, 6, line)
+            else:
+                pdf.set_font("Arial", '', 11) # Regular for body
+                pdf.multi_cell(0, 6, line)
+        
         pdf.ln(10)
         
-    # SECTION 2: SAVED TRIALS
+    # --- SECTION 2: SAVED TRIALS ---
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "2. Selected Clinical Trials for Review", ln=True)
+    pdf.cell(0, 10, "2. Shortlisted Clinical Trials", ln=True)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Underline
     pdf.ln(5)
     
     for nct_id, details in saved_trials.items():
-        # Trial Title (Bold)
+        # Trial Title (Bold, Blue color)
+        pdf.set_text_color(0, 51, 102) # Dark Blue
         pdf.set_font("Arial", 'B', 12)
-        pdf.multi_cell(0, 8, f"{clean_text(details['title'])} ({nct_id})")
+        pdf.multi_cell(0, 8, f"{clean_text(details['title'])}")
+        
+        # ID (Gray)
+        pdf.set_text_color(100, 100, 100)
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(0, 6, f"Trial ID: {nct_id}", ln=True)
+        
+        # Reset to Black for body
+        pdf.set_text_color(0, 0, 0)
         
         # Summary
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") 
         pdf.ln(2)
         
-        # AI Match Reason
+        # AI Analysis Box
         if details.get('match_status'):
+            pdf.set_fill_color(245, 255, 250) # Very light green bg
             pdf.set_font("Arial", 'B', 10)
-            pdf.write(6, "AI Analysis: ")
+            pdf.cell(0, 8, "  AI Match Analysis:", ln=True, fill=True)
             
             pdf.set_font("Arial", '', 10)
             status_text = details['match_status'].replace("Status: ", "")
-            pdf.multi_cell(0, 6, clean_text(status_text))
+            pdf.multi_cell(0, 6, clean_text(status_text), fill=True)
         
-        pdf.ln(8)
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
         pdf.ln(8)
         
     return pdf.output(dest='S').encode('latin-1')
@@ -232,6 +243,7 @@ with tab_search:
             
             st.rerun()
 
+    # RESULTS LIST
     trials = st.session_state.studies
     if trials:
         col1, col2 = st.columns([3, 1])
