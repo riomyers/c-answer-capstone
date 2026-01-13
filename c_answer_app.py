@@ -368,7 +368,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TAB STRUCTURE ---
-tab_search, tab_insights, tab_saved = st.tabs(["🔍 Trial Search", "📊 Treatment Landscape", "📁 Saved Report"])
+# ADDED 4TH TAB FOR ROADMAP
+tab_search, tab_insights, tab_saved, tab_roadmap = st.tabs(["🔍 Trial Search", "📊 Treatment Landscape", "📁 Saved Report", "🚀 Future Roadmap"])
 
 # ==========================================
 # TAB 1: SEARCH & RESULTS
@@ -413,11 +414,11 @@ with tab_search:
 
     # 2. DEMO & FORM
     
-    # NEW: Demo Button outside Expander
+    # DEMO BUTTON
     if not st.session_state.search_performed:
         c_demo, _ = st.columns([1, 4])
         with c_demo:
-            if st.button("⚡ Load Demo Profile"):
+            if st.button("⚡ Load Demo Profile", help="Pre-fill form for presentation"):
                 st.session_state.form_diagnosis = "Colorectal Cancer"
                 st.session_state.form_metastasis = "Liver"
                 st.session_state.form_age = 55
@@ -619,4 +620,32 @@ with tab_saved:
         2. Run a search for your condition.
         3. Click the **Save ⭐** button on any trial.
         4. Return here to compare them side-by-side.
+        """)
+
+# ==========================================
+# TAB 4: FUTURE ROADMAP (NEW)
+# ==========================================
+with tab_roadmap:
+    st.markdown("### 🚀 C-Answer: Phase 2 Roadmap")
+    st.write("Our current MVP focuses on intelligent search and analysis. Phase 2 will focus on deep data integration and proactive monitoring.")
+    
+    with st.expander("💊 Feature 1: Drug Interaction Safety Check (OpenFDA)", expanded=True):
+        st.markdown("""
+        **The Problem:** Patients are terrified that trial drugs will interfere with their current medications (e.g., blood pressure, diabetes meds).
+        
+        **The Solution:** We will connect to the **OpenFDA API**. Patients will input their current medication list, and C-Answer will automatically flag potential contraindications against the trial protocol *before* they apply.
+        """)
+
+    with st.expander("📚 Feature 2: \"True\" Live RAG Database", expanded=True):
+        st.markdown("""
+        **The Problem:** LLM training data cuts off. If guidelines change tomorrow, the AI might not know.
+        
+        **The Solution:** Instead of relying solely on the model's training, we will implement a **Vector Database (e.g., Pinecone)**. We will ingest live PDFs of NCCN guidelines daily. The AI will retrieve the exact, most current page before generating its landscape report.
+        """)
+        
+    with st.expander("⏰ Feature 3: 24/7 \"Tireless\" Monitor & Alert System", expanded=True):
+        st.markdown("""
+        **The Problem:** Patients have to manually log in and search every week. Oncologists are too busy to do it for them.
+        
+        **The Solution:** We will transition from on-demand search to active monitoring. Cloud functions will run the patient's specific query every 24 hours and **email alert** them immediately when a new matching trial opens near their zipcode.
         """)
