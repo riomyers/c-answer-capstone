@@ -67,37 +67,74 @@ st.markdown("""
 def spacer(height=20):
     st.markdown(f"<div style='height: {height}px'></div>", unsafe_allow_html=True)
 
-def create_pdf(saved_trials, patient_info):
-    """Generates a PDF report of saved trials."""
+def clean_text(text):
+    """
+    Cleans text for FPDF to prevent encoding errors and cutoffs.
+    Replaces common smart quotes and utf-8 characters with ascii equivalents.
+    """
+    if not text: return ""
+    replacements = {
+        '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
+        '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'
+    }
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    
+    # Encode to latin-1, replacing unknowns with ? to prevent crash
+    return text.encode('latin-1', 'replace').decode('latin-1')
+
+def create_pdf(saved_trials, patient_info, treatment_report):
+    """Generates a PDF report including Landscape and Saved Trials."""
     pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "C-Answer: Clinical Trial Report", ln=True, align='C')
+    
+    # Title
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 10, "C-Answer: Patient Care Plan", ln=True, align='C')
     pdf.ln(10)
     
+    # Patient Profile
     pdf.set_font("Arial", 'I', 12)
-    pdf.multi_cell(0, 10, f"Patient Profile: {patient_info}")
-    pdf.ln(10)
+    pdf.multi_cell(0, 10, f"Patient Profile: {clean_text(patient_info)}")
+    pdf.ln(5)
     
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "Selected Trials for Review:", ln=True)
+    # SECTION 1: TREATMENT LANDSCAPE
+    if treatment_report:
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(0, 10, "1. Suggested Treatment Landscape", ln=True)
+        pdf.ln(5)
+        
+        pdf.set_font("Arial", '', 11)
+        # We replace markdown bolding ** with empty strings for cleanliness
+        clean_report = clean_text(treatment_report).replace('**', '')
+        pdf.multi_cell(0, 6, clean_report)
+        pdf.ln(10)
+        
+    # SECTION 2: SAVED TRIALS
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "2. Selected Clinical Trials for Review", ln=True)
     pdf.ln(5)
     
     for nct_id, details in saved_trials.items():
+        # Trial Title
         pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, f"{details['title']} ({nct_id})", ln=True)
+        pdf.cell(0, 10, f"{clean_text(details['title'])} ({nct_id})", ln=True)
         
+        # Summary
         pdf.set_font("Arial", '', 10)
-        # Clean text to remove unicode characters that break FPDF
-        clean_summary = details['summary'].encode('latin-1', 'replace').decode('latin-1')
-        pdf.multi_cell(0, 6, clean_summary[:500] + "...")
-        pdf.ln(5)
+        pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") # Limit length to prevent massive overflow
+        pdf.ln(2)
         
+        # AI Match Reason
         if details.get('match_status'):
             pdf.set_font("Arial", 'B', 10)
-            pdf.cell(0, 6, f"AI Analysis: {details['match_status']}", ln=True)
+            pdf.cell(0, 6, f"AI Analysis: {clean_text(details['match_status'])}", ln=True)
         
-        pdf.ln(10)
+        pdf.ln(8)
+        # Divider Line
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(8)
         
     return pdf.output(dest='S').encode('latin-1')
 
@@ -267,7 +304,13 @@ with tab_saved:
         st.success(f"You have saved {len(saved)} trials.")
         
         # PDF DOWNLOAD
-        pdf_bytes = create_pdf(saved, st.session_state.patient_profile_str)
+        # Pass the treatment report into the PDF generator now
+        pdf_bytes = create_pdf(
+            saved, 
+            st.session_state.patient_profile_str, 
+            st.session_state.treatment_report
+        )
+        
         st.download_button(
             label="📄 Download PDF Report for Doctor",
             data=pdf_bytes,
