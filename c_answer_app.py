@@ -92,6 +92,10 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         for line in lines:
             line = clean_text(line).strip()
             if not line: continue
+            
+            # Page Break Check for long report sections
+            if pdf.get_y() > 250: pdf.add_page()
+            
             if (len(line) < 60 and not line.endswith('.') and not line.startswith('*')):
                 pdf.ln(6)
                 pdf.set_font("Arial", 'B', 11)
@@ -103,8 +107,8 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         
     # 2. Comparison
     if comparison_report:
-        # Check space before starting comparison section
-        if pdf.get_y() > 220: pdf.add_page()
+        # Aggressive page break before starting this section
+        if pdf.get_y() > 200: pdf.add_page()
             
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(0, 10, "2. AI Comparison of Selected Trials", ln=True)
@@ -122,8 +126,9 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf.ln(5)
     
     for nct_id, details in saved_trials.items():
-        # PAGE BREAK CHECK: If we are near bottom (230mm), force new page
-        if pdf.get_y() > 230:
+        # SAFETY CHECK: If we are past 200mm (approx 3/4 down page), 
+        # start a new page so the whole trial block stays together.
+        if pdf.get_y() > 200:
             pdf.add_page()
         
         # Title
@@ -140,10 +145,23 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") 
-        pdf.ln(8)
+        pdf.ln(4)
         
-        # Divider Line
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        # AI Match Reason
+        if details.get('match_status'):
+            # Only start this box if we have space, otherwise break page
+            if pdf.get_y() > 250: pdf.add_page()
+            
+            pdf.set_fill_color(245, 255, 250) 
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(0, 6, "AI Match Analysis:", ln=True, fill=True)
+            
+            pdf.set_font("Arial", '', 10)
+            status_text = details['match_status'].replace("Status: ", "")
+            pdf.multi_cell(0, 6, clean_text(status_text), fill=True)
+        
+        pdf.ln(5)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Clean separator
         pdf.ln(8)
         
     return pdf.output(dest='S').encode('latin-1')
