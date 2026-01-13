@@ -413,8 +413,8 @@ with tab_search:
 
     # 2. DEMO & FORM
     if not st.session_state.search_performed:
-        # Adjusted ratios and padding for tighter placement
-        c_btn, c_txt = st.columns([1, 4])
+        # TIGHT COLUMN RATIO to fix alignment
+        c_btn, c_txt = st.columns([0.15, 0.85])
         with c_btn:
              if st.button("⚡ Load Demo Profile", help="Pre-fill form for presentation"):
                 st.session_state.form_diagnosis = "Colorectal Cancer"
@@ -428,8 +428,7 @@ with tab_search:
                 st.session_state.form_kras = True
                 st.rerun()
         with c_txt:
-             # 12px top padding aligns nicely with the button text
-             st.markdown("<div style='padding-top: 12px; color: #ff6b6b; font-size: 0.9rem; font-weight: bold;'><i>(For Presentation Purposes Only)</i></div>", unsafe_allow_html=True)
+             st.markdown("<div style='padding-top: 13px; color: #ff6b6b; font-size: 0.9rem; font-weight: bold;'><i>(For Presentation Purposes Only)</i></div>", unsafe_allow_html=True)
 
     with st.expander("Configure Patient Profile", expanded=is_expanded):
         with st.form("patient_form"):
@@ -451,6 +450,7 @@ with tab_search:
             with c6: msi = st.selectbox("MSI/MMR Status", ["Unknown", "MSS (Stable)", "MSI-High (Instable)"], index=0)
             
             st.write("**Biomarkers & Filters**")
+            # TIGHT SPACING FOR CHECKBOXES
             c7, c8, _ = st.columns([1, 1, 2])
             with c7: kras = st.checkbox("KRAS Wild-type", value=st.session_state.form_kras)
             with c8: phase1 = st.checkbox("Exclude Phase 1", value=False)
@@ -467,7 +467,6 @@ with tab_search:
             st.session_state.analysis_results = {}
             st.session_state.comparison_report = "" 
             
-            # Update state with form values
             st.session_state.user_zip = zip_input 
             st.session_state.form_diagnosis = diagnosis
             st.session_state.form_metastasis = metastasis
@@ -482,7 +481,6 @@ with tab_search:
             sex_s = sex if sex != "Select..." else "Unknown"
             zip_s = zip_input if zip_input else "Not provided"
             
-            # FULL PROFILE STRING FOR AI
             st.session_state.patient_profile_str = f"""
             Age: {age_s}, Sex: {sex_s}, Zip: {zip_s}
             Diagnosis: {diagnosis}
@@ -499,7 +497,6 @@ with tab_search:
                 data = fetch_clinical_trials(search_term)
                 raw_studies = data.get('studies', [])
                 
-                # Sort Logic
                 processed = []
                 for study in raw_studies:
                     dist_miles = float('inf') 
@@ -529,8 +526,6 @@ with tab_search:
                     processed.sort(key=lambda x: x['_sort_distance'])
                 
                 st.session_state.studies = processed
-                
-                # AI Report Generation
                 st.session_state.treatment_report = generate_treatment_report(st.session_state.patient_profile_str)
             
             st.rerun()
