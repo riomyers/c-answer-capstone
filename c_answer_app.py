@@ -59,17 +59,8 @@ st.markdown("""
         border-color: #60A5FA;
     }
     
-    .section-header {
-        margin-top: 30px;
-        margin-bottom: 15px;
-        font-size: 1.2rem;
-        font-weight: 600;
-        color: #94a3b8;
-        border-bottom: 1px solid #334155;
-        padding-bottom: 5px;
-    }
-    
-    div.stButton > button {
+    /* TARGETING BUTTONS CORRECTLY */
+    div.stButton > button, div[data-testid="stFormSubmitButton"] > button {
         background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
         color: white;
         border: none;
@@ -77,6 +68,7 @@ st.markdown("""
         border-radius: 8px;
         font-weight: 600;
         width: 100%;
+        margin-top: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -84,7 +76,6 @@ st.markdown("""
 # --- HELPER FUNCTIONS ---
 
 def clean_text(text):
-    """Cleans text for PDF generation."""
     if not text: return ""
     text = text.replace('###', '').replace('##', '').replace('#', '').replace('**', '').replace('__', '')
     replacements = {'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'}
@@ -92,10 +83,6 @@ def clean_text(text):
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 def calculate_nearest_site(user_zip, locations):
-    """
-    Calculates distance to nearest site and returns navigation link.
-    Returns: (miles, facility_name, city, state, google_maps_url)
-    """
     if not user_zip or not locations:
         return None, None, None, None, None
         
@@ -119,25 +106,19 @@ def calculate_nearest_site(user_zip, locations):
 
         if nearest_loc and min_km != float('inf'):
             miles = int(min_km * 0.621371)
-            
             facility = nearest_loc.get('facility', 'Study Site')
             city = nearest_loc.get('city', '')
             state = nearest_loc.get('state', '')
             zip_code = nearest_loc.get('zip', '')
-            
-            # Smart Navigation Link
             query = f"{facility}, {city}, {state} {zip_code}".replace(" ", "+")
             maps_url = f"https://www.google.com/maps/search/?api=1&query={query}"
-            
             return miles, facility, city, state, maps_url
-            
     except Exception:
         return None, None, None, None, None
         
     return None, None, None, None, None
 
 def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
-    """Generates the PDF report with safety checks for page breaks."""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -149,9 +130,9 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf.cell(0, 10, "Intelligent Clinical Trial & Recovery Plan", ln=True, align='C')
     pdf.ln(10)
     
-    # Profile Box
+    # Profile
     pdf.set_fill_color(240, 240, 240) 
-    pdf.rect(10, pdf.get_y(), 190, 25, 'F') # Slightly taller for more details
+    pdf.rect(10, pdf.get_y(), 190, 25, 'F')
     pdf.set_xy(12, pdf.get_y() + 5)
     
     pdf.set_font("Arial", 'B', 12)
@@ -167,16 +148,11 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         pdf.cell(0, 10, "1. Treatment Landscape", ln=True)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
-        
         lines = treatment_report.split('\n')
         for line in lines:
             line = clean_text(line).strip()
             if not line: continue
-            
-            # Page Break Check
             if pdf.get_y() > 250: pdf.add_page()
-            
-            # Smart Header Detection
             if (len(line) < 60 and not line.endswith('.') and not line.startswith('*')):
                 pdf.ln(6)
                 pdf.set_font("Arial", 'B', 11)
@@ -206,15 +182,12 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     
     for nct_id, details in saved_trials.items():
         if pdf.get_y() > 200: pdf.add_page()
-        
         pdf.set_text_color(0, 51, 102) 
         pdf.set_font("Arial", 'B', 12)
         pdf.multi_cell(0, 8, f"{clean_text(details['title'])}")
-        
         pdf.set_text_color(100, 100, 100)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 6, f"Trial ID: {nct_id}", ln=True)
-        
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") 
@@ -222,19 +195,15 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         
         if details.get('match_status'):
             if pdf.get_y() > 250: pdf.add_page()
-            
             pdf.set_fill_color(245, 255, 250) 
             pdf.set_font("Arial", 'B', 10)
             pdf.cell(0, 6, "AI Match Analysis:", ln=True, fill=True)
-            
             pdf.set_font("Arial", '', 10)
             status_text = details['match_status'].replace("Status: ", "")
             pdf.multi_cell(0, 6, clean_text(status_text), fill=True)
-        
         pdf.ln(5)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(8)
-        
     return pdf.output(dest='S').encode('latin-1')
 
 def fetch_clinical_trials(condition, status="RECRUITING"):
@@ -253,9 +222,7 @@ def fetch_clinical_trials(condition, status="RECRUITING"):
         return {}
 
 def render_trial_card(trial):
-    """
-    Renders a single trial card. Uses 'dist_data' to display navigation link.
-    """
+    """Renders a single trial card."""
     protocol = trial.get('protocolSection', {})
     id_mod = protocol.get('identificationModule', {})
     desc_mod = protocol.get('descriptionModule', {})
@@ -270,10 +237,8 @@ def render_trial_card(trial):
     dist_str = ""
     
     if dist_data:
-        # Show Facility Name (Truncated) + Distance
         fac_name = dist_data['facility']
         if len(fac_name) > 30: fac_name = fac_name[:30] + "..."
-        
         dist_str = f"<a href='{dist_data['url']}' target='_blank' class='distance-badge'>📍 {fac_name} ({dist_data['miles']} mi)</a>"
     
     with st.expander(f"{title}"):
@@ -294,7 +259,6 @@ def render_trial_card(trial):
             st.text_area("Raw Data", criteria, height=150, disabled=True, key=f"crit_{nct_id}")
         with c2:
             st.markdown("#### 🧠 AI Analysis")
-            
             existing_res = st.session_state.analysis_results.get(nct_id)
             if existing_res:
                 if "Status: Match" in existing_res: st.success(existing_res)
@@ -365,32 +329,31 @@ with tab_search:
     # 1. AUTO-FILL MODULE
     with st.expander("📄 Auto-Fill from Medical Records (Optional)", expanded=is_expanded):
         uploaded_files = st.file_uploader("Upload Pathology Reports (PDF)", type="pdf", accept_multiple_files=True)
+        # Added Manual Button to prevent auto-run loops
         if uploaded_files:
-            with st.spinner("Analyzing documents & Extracting biomarkers..."):
-                try:
-                    all_text = ""
-                    for pdf_file in uploaded_files:
-                        reader = PdfReader(pdf_file)
-                        for page in reader.pages:
-                            all_text += page.extract_text() + "\n"
-                    
-                    extracted = extract_patient_data(all_text)
-                    if extracted:
-                        st.session_state.form_diagnosis = extracted.get("diagnosis", "")
-                        st.session_state.form_metastasis = extracted.get("metastasis", "")
-                        st.session_state.form_age = extracted.get("age", 35) or 35
-                        st.session_state.form_sex = extracted.get("sex", "Select...")
-                        st.session_state.form_kras = extracted.get("kras_wild_type", False)
+            if st.button("🚀 Extract Data from Files"):
+                with st.spinner("Analyzing documents & Extracting biomarkers..."):
+                    try:
+                        all_text = ""
+                        for pdf_file in uploaded_files:
+                            reader = PdfReader(pdf_file)
+                            for page in reader.pages:
+                                all_text += page.extract_text() + "\n"
                         
-                        # New fields
-                        st.session_state.form_ecog = extracted.get("ecog", "0 - Fully Active")
-                        st.session_state.form_lines = extracted.get("prior_lines", "None (1st Line)")
-                        st.session_state.form_msi = extracted.get("msi", "Unknown")
-                        
-                        st.success(f"✅ Extracted profile data from {len(uploaded_files)} documents!")
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Error reading documents: {e}")
+                        extracted = extract_patient_data(all_text)
+                        if extracted:
+                            st.session_state.form_diagnosis = extracted.get("diagnosis", "")
+                            st.session_state.form_metastasis = extracted.get("metastasis", "")
+                            st.session_state.form_age = extracted.get("age", 35) or 35
+                            st.session_state.form_sex = extracted.get("sex", "Select...")
+                            st.session_state.form_kras = extracted.get("kras_wild_type", False)
+                            st.session_state.form_ecog = extracted.get("ecog", "0 - Fully Active")
+                            st.session_state.form_lines = extracted.get("prior_lines", "None (1st Line)")
+                            st.session_state.form_msi = extracted.get("msi", "Unknown")
+                            
+                            st.success(f"✅ Extracted profile data! Please review the form below.")
+                    except Exception as e:
+                        st.error(f"Error reading documents: {e}")
 
     # 2. PATIENT FORM
     with st.expander("Configure Patient Profile", expanded=is_expanded):
@@ -414,8 +377,9 @@ with tab_search:
             with c7: kras = st.checkbox("KRAS Wild-type", value=st.session_state.form_kras)
             with c8: phase1 = st.checkbox("Exclude Phase 1", value=False)
             
-            spacer(10)
-            submitted = st.form_submit_button("Find Matching Trials", type="primary")
+            # SPACER AND SUBMIT BUTTON
+            st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
+            submitted = st.form_submit_button("🔍 Find Matching Trials", type="primary")
 
     # 3. SEARCH EXECUTION
     if submitted:
@@ -519,12 +483,11 @@ with tab_insights:
     if st.session_state.treatment_report:
         st.info(f"🧠 AI-Generated Landscape for: **{st.session_state.form_diagnosis}**")
         st.markdown(st.session_state.treatment_report)
-        st.caption("Source: AI Synthesis of General Medical Knowledge (Llama 3.3). Verify with NCCN Guidelines.")
     else:
         st.write("👈 Perform a search in the 'Trial Search' tab to generate a treatment landscape report.")
 
 # ==========================================
-# TAB 3: SAVED REPORT
+# TAB 3: SAVED REPORT & COMPARATOR
 # ==========================================
 with tab_saved:
     saved = st.session_state.saved_trials
