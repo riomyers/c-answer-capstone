@@ -70,9 +70,9 @@ def spacer(height=20):
 def clean_text(text):
     """
     Cleans text for FPDF to prevent encoding errors and cutoffs.
-    Replaces common smart quotes and utf-8 characters with ascii equivalents.
     """
     if not text: return ""
+    # Standardize quotes and dashes that often break PDFs
     replacements = {
         '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
         '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'
@@ -80,7 +80,6 @@ def clean_text(text):
     for char, replacement in replacements.items():
         text = text.replace(char, replacement)
     
-    # Encode to latin-1, replacing unknowns with ? to prevent crash
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 def create_pdf(saved_trials, patient_info, treatment_report):
@@ -96,6 +95,7 @@ def create_pdf(saved_trials, patient_info, treatment_report):
     
     # Patient Profile
     pdf.set_font("Arial", 'I', 12)
+    # Using multi_cell here too just in case diagnosis is very long
     pdf.multi_cell(0, 10, f"Patient Profile: {clean_text(patient_info)}")
     pdf.ln(5)
     
@@ -106,7 +106,6 @@ def create_pdf(saved_trials, patient_info, treatment_report):
         pdf.ln(5)
         
         pdf.set_font("Arial", '', 11)
-        # We replace markdown bolding ** with empty strings for cleanliness
         clean_report = clean_text(treatment_report).replace('**', '')
         pdf.multi_cell(0, 6, clean_report)
         pdf.ln(10)
@@ -117,19 +116,25 @@ def create_pdf(saved_trials, patient_info, treatment_report):
     pdf.ln(5)
     
     for nct_id, details in saved_trials.items():
-        # Trial Title
+        # Trial Title (Bold)
         pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, f"{clean_text(details['title'])} ({nct_id})", ln=True)
+        # Use multi_cell for title in case it's long
+        pdf.multi_cell(0, 8, f"{clean_text(details['title'])} ({nct_id})")
         
         # Summary
         pdf.set_font("Arial", '', 10)
-        pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") # Limit length to prevent massive overflow
+        pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") 
         pdf.ln(2)
         
-        # AI Match Reason
+        # AI Match Reason (FIXED: Now uses multi_cell to wrap text)
         if details.get('match_status'):
             pdf.set_font("Arial", 'B', 10)
-            pdf.cell(0, 6, f"AI Analysis: {clean_text(details['match_status'])}", ln=True)
+            # The 'AI Analysis:' prefix
+            pdf.write(6, "AI Analysis: ")
+            
+            # The actual result (Regular font)
+            pdf.set_font("Arial", '', 10)
+            pdf.multi_cell(0, 6, clean_text(details['match_status']))
         
         pdf.ln(8)
         # Divider Line
@@ -203,7 +208,7 @@ with tab_search:
             st.warning("⚠️ Please enter a diagnosis.")
         else:
             st.session_state.search_performed = True
-            st.session_state.analysis_results = {} # Reset AI results on new search
+            st.session_state.analysis_results = {} 
             
             # Save profile string for report
             age_s = str(age) if age else "Unknown"
@@ -215,7 +220,7 @@ with tab_search:
             with st.spinner(f"Scanning ClinicalTrials.gov for '{search_term}'..."):
                 data = fetch_clinical_trials(search_term)
                 st.session_state.studies = data.get('studies', [])
-                # Also generate treatment report in background
+                # Generate treatment report
                 biomarkers = "KRAS Wild-type" if kras else "None specified"
                 st.session_state.treatment_report = generate_treatment_report(diagnosis, metastasis, biomarkers)
             
@@ -272,7 +277,6 @@ with tab_search:
                             st.button("Saved ✅", disabled=True, key=f"save_{nct_id}")
                         else:
                             if st.button("Save ⭐", key=f"save_{nct_id}"):
-                                # Save trial details to session state
                                 st.session_state.saved_trials[nct_id] = {
                                     "title": title,
                                     "summary": summary,
@@ -281,7 +285,7 @@ with tab_search:
                                 st.rerun()
 
 # ==========================================
-# TAB 2: TREATMENT LANDSCAPE (Advanced Data)
+# TAB 2: TREATMENT LANDSCAPE
 # ==========================================
 with tab_insights:
     if st.session_state.treatment_report:
@@ -297,14 +301,12 @@ with tab_insights:
 with tab_saved:
     saved = st.session_state.saved_trials
     
-    # Always show header
     st.markdown("### 📁 Saved Trials Report")
 
     if saved:
         st.success(f"You have saved {len(saved)} trials.")
         
         # PDF DOWNLOAD
-        # Pass the treatment report into the PDF generator now
         pdf_bytes = create_pdf(
             saved, 
             st.session_state.patient_profile_str, 
@@ -327,9 +329,7 @@ with tab_saved:
                 del st.session_state.saved_trials[nid]
                 st.rerun()
     else:
-        # IMPROVED EMPTY STATE WITH GUIDE
         st.info("Your shortlist is currently empty.")
-        
         st.markdown("""
         #### How to create your report:
         1. Go to the **🔍 Trial Search** tab.
