@@ -1,0 +1,11 @@
+[server]
+folderWatchBlacklist = ['venv', '.git', '.idea', '__pycache__']
+fileWatcherType = "auto" 
+
+[theme]
+base="dark"
+primaryColor="#4F46E5"  # Indigo-600 (Modern AI Blue)
+backgroundColor="#0F172A" # Slate-900 (Deep Blue/Black)
+secondaryBackgroundColor="#1E293B" # Slate-800 (Card Background)
+textColor="#F8FAFC" # Slate-50 (White Text)
+font="sans serif"
