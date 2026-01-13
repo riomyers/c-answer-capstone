@@ -7,36 +7,35 @@ st.set_page_config(
     page_title="C-Answer", 
     page_icon="🎗️", 
     layout="wide",
-    initial_sidebar_state="collapsed" # Default to collapsed so we focus on the main content
+    initial_sidebar_state="collapsed"
 )
 
-# --- MINIMAL CSS (Mobile Optimized) ---
+# --- CORRECTED CSS (Dark Mode Safe) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
     }
     
     [data-testid="InputInstructions"] { display: none !important; }
     
-    /* Mobile-Friendly Cards */
+    /* FIX: Force Dark Background for Cards so White Text is visible */
     div.stExpander {
         border: 1px solid #334155; 
         border-radius: 12px;
         margin-bottom: 16px;
-        background-color: white;
+        background-color: #1E293B !important; /* Slate-800 */
     }
     
-    /* The Search Panel (Top Box) */
-    .search-panel {
-        background-color: white;
-        padding: 20px;
+    /* FIX: Force Search Panel to match Dark Theme */
+    div[data-testid="stExpander"] > details {
+        background-color: #1E293B !important;
         border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        margin-bottom: 25px;
     }
 
+    /* Badges */
     .status-badge {
         background-color: #064E3B; 
         color: #6EE7B7; 
@@ -48,11 +47,12 @@ st.markdown("""
         border: 1px solid #059669;
     }
     
+    /* Buttons */
     div.stButton > button {
         background: #4F46E5; 
         color: white;
         border: none;
-        padding: 0.75rem 1.2rem; /* Larger touch target for mobile */
+        padding: 0.75rem 1.2rem;
         border-radius: 8px;
         font-weight: 600;
         width: 100%;
@@ -61,6 +61,13 @@ st.markdown("""
     div.stButton > button:hover {
         background-color: #4338ca;
         color: white;
+    }
+    
+    /* Mobile Layout Tweaks */
+    @media (max-width: 640px) {
+        .stTextInput input {
+            font-size: 16px; /* Prevents auto-zoom on iPhone */
+        }
     }
 
 </style>
@@ -102,8 +109,8 @@ st.title("C-Answer")
 st.markdown("### Intelligent Clinical Trial Matching & Recovery Planning")
 spacer(10)
 
-# --- SMART SEARCH PANEL (Replaces Sidebar) ---
-# Logic: If we haven't searched yet, keep it OPEN. If we have, CLOSE it (auto-adjust).
+# --- SEARCH PANEL (Auto-Collapsing) ---
+# Logic: Keep open until a search happens
 is_expanded = not st.session_state.search_performed
 
 with st.expander("🔍  Search Settings & Patient Profile", expanded=is_expanded):
@@ -134,8 +141,6 @@ with st.expander("🔍  Search Settings & Patient Profile", expanded=is_expanded
             phase1 = st.checkbox("Exclude Phase 1", value=False)
         
         spacer(20)
-        
-        # The Main Search Button
         submitted = st.form_submit_button("🔍 Find Matching Trials", type="primary")
 
 # --- SEARCH LOGIC ---
@@ -143,25 +148,19 @@ if submitted:
     if not diagnosis.strip():
         st.warning("⚠️ Please enter a diagnosis to start your search.")
     else:
-        # 1. Mark search as done (so the panel will collapse on reload)
         st.session_state.search_performed = True
-        
-        # 2. Reset Analysis Memory
         st.session_state.analysis_results = {}
         st.session_state.active_nct_id = None
         
-        # 3. Build Query
         if metastasis.strip():
             search_term = f"{diagnosis} {metastasis}"
         else:
             search_term = diagnosis
 
-        # 4. Fetch Data
         with st.spinner(f"Connecting to ClinicalTrials.gov for '{search_term}'..."):
             data = fetch_clinical_trials(search_term)
             st.session_state.studies = data.get('studies', [])
             
-        # 5. Force Rerun to apply the "Collapsed" look
         st.rerun()
 
 # --- RESULTS DISPLAY ---
@@ -171,7 +170,6 @@ if not trials:
     if st.session_state.search_performed:
         st.warning("No recruiting trials found. Try broadening your search.")
     else:
-        # Landing Page Message
         st.info("👆 Expand the search panel above to begin.")
 
 else:
