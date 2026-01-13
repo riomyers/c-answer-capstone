@@ -110,21 +110,24 @@ def create_pdf(saved_trials, patient_info, treatment_report):
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
         
-        # SMART PARSING LOOP FOR SPACING
+        # SMART PARSING LOOP v2 (Fixed Logic)
         lines = treatment_report.split('\n')
         for line in lines:
             line = clean_text(line).strip()
             if not line:
                 continue
             
-            # Detect Headers (Lines starting with Numbers like "1." or "2.")
-            # We add EXTRA spacing before these lines to separate sections visually.
-            if (line[0].isdigit() and line[1] == '.') or line.isupper():
-                pdf.ln(6)  # <--- THIS ADDS THE SPACING YOU REQUESTED
-                pdf.set_font("Arial", 'B', 11) 
+            # IMPROVED HEADER DETECTION:
+            # If a line is SHORT (<60 chars), does NOT end in a period, 
+            # and is NOT a bullet point, we treat it as a sub-header.
+            is_header = (len(line) < 60) and (not line.endswith('.')) and (not line.startswith('*'))
+            
+            if is_header:
+                pdf.ln(8)  # Add 8mm of vertical space BEFORE the header
+                pdf.set_font("Arial", 'B', 11) # Make it Bold
                 pdf.multi_cell(0, 6, line)
             else:
-                pdf.set_font("Arial", '', 11)
+                pdf.set_font("Arial", '', 11) # Regular text
                 pdf.multi_cell(0, 6, line)
         
         pdf.ln(10)
