@@ -69,7 +69,8 @@ st.markdown("""
         padding-bottom: 5px;
     }
     
-    div.stButton > button {
+    /* TARGETING BUTTONS CORRECTLY */
+    div.stButton > button, div[data-testid="stFormSubmitButton"] > button {
         background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
         color: white;
         border: none;
@@ -77,14 +78,15 @@ st.markdown("""
         border-radius: 8px;
         font-weight: 600;
         width: 100%;
+        margin-top: 10px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # --- HELPER FUNCTIONS ---
 
-# --- FIXED: Restored Missing Spacer Function ---
 def spacer(height=20):
+    """Adds vertical spacing."""
     st.markdown(f"<div style='height: {height}px'></div>", unsafe_allow_html=True)
 
 def clean_text(text):
@@ -392,6 +394,8 @@ with tab_search:
                                 
                             st.session_state.form_sex = extracted.get("sex", "Select...")
                             st.session_state.form_kras = extracted.get("kras_wild_type", False)
+                            
+                            # New fields
                             st.session_state.form_ecog = extracted.get("ecog", "0 - Fully Active")
                             st.session_state.form_lines = extracted.get("prior_lines", "None (1st Line)")
                             st.session_state.form_msi = extracted.get("msi", "Unknown")
@@ -422,14 +426,13 @@ with tab_search:
             with c6: msi = st.selectbox("MSI/MMR Status", ["Unknown", "MSS (Stable)", "MSI-High (Instable)"], index=0)
             
             st.write("**Biomarkers & Filters**")
-            c7, c8 = st.columns(2)
+            # UPDATED COLUMN LAYOUT FOR TIGHTER SPACING
+            c7, c8, _ = st.columns([1, 1, 2])
             with c7: kras = st.checkbox("KRAS Wild-type", value=st.session_state.form_kras)
             with c8: phase1 = st.checkbox("Exclude Phase 1", value=False)
             
-            # --- FIXED: SPACER FUNCTION CALL ---
+            # SPACER AND SUBMIT BUTTON
             spacer(20) 
-            
-            # --- FIXED: SUBMIT BUTTON INSIDE FORM ---
             submitted = st.form_submit_button("Find Matching Trials", type="primary")
 
     # 3. SEARCH EXECUTION
@@ -452,7 +455,7 @@ with tab_search:
             st.session_state.form_lines = lines
             st.session_state.form_msi = msi
             
-            # Use defaults for display if empty
+            # Handle empty fields for display logic
             age_s = str(age) if age else "Unknown"
             sex_s = sex if sex != "Select..." else "Unknown"
             zip_s = zip_input if zip_input else "Not provided"
