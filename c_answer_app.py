@@ -262,15 +262,12 @@ def render_trial_card(trial):
     id_mod = protocol.get('identificationModule', {})
     desc_mod = protocol.get('descriptionModule', {})
     elig_mod = protocol.get('eligibilityModule', {})
-    
     nct_id = id_mod.get('nctId', 'N/A')
     title = id_mod.get('briefTitle', 'No Title')
     summary = desc_mod.get('briefSummary', 'No summary.')
     criteria = elig_mod.get('eligibilityCriteria', 'Not listed.')
-    
     dist_data = trial.get('_dist_data')
     dist_str = ""
-    
     if dist_data:
         fac_name = dist_data['facility']
         if len(fac_name) > 30: fac_name = fac_name[:30] + "..."
@@ -284,17 +281,14 @@ def render_trial_card(trial):
             {dist_str}
         </div>
         """, unsafe_allow_html=True)
-        
         st.write(summary)
         st.markdown("---")
-        
         c1, c2 = st.columns([1, 1])
         with c1:
             st.caption("Eligibility Criteria")
             st.text_area("Raw Data", criteria, height=150, disabled=True, key=f"crit_{nct_id}")
         with c2:
             st.markdown("#### 🧠 AI Analysis")
-            
             existing_res = st.session_state.analysis_results.get(nct_id)
             if existing_res:
                 if "Status: Match" in existing_res: st.success(existing_res)
@@ -302,7 +296,6 @@ def render_trial_card(trial):
                 else: st.warning(existing_res)
             else:
                 st.info("Ready to analyze.")
-            
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("Analyze", key=f"btn_{nct_id}"):
@@ -368,7 +361,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- TAB STRUCTURE ---
-# ADDED 4TH TAB FOR ROADMAP
 tab_search, tab_insights, tab_saved, tab_roadmap = st.tabs(["🔍 Trial Search", "📊 Treatment Landscape", "📁 Saved Report", "🚀 Future Roadmap"])
 
 # ==========================================
@@ -413,12 +405,10 @@ with tab_search:
                         st.error(f"Error reading documents: {e}")
 
     # 2. DEMO & FORM
-    
-    # DEMO BUTTON
     if not st.session_state.search_performed:
-        c_demo, _ = st.columns([1, 4])
+        c_demo, c_note, _ = st.columns([1, 2, 2])
         with c_demo:
-            if st.button("⚡ Load Demo Profile", help="Pre-fill form for presentation"):
+            if st.button("⚡ Load Demo Profile"):
                 st.session_state.form_diagnosis = "Colorectal Cancer"
                 st.session_state.form_metastasis = "Liver"
                 st.session_state.form_age = 55
@@ -429,6 +419,8 @@ with tab_search:
                 st.session_state.form_msi = "MSS (Stable)"
                 st.session_state.form_kras = True
                 st.rerun()
+        with c_note:
+            st.markdown("<div style='padding-top: 15px; color: #ff6b6b; font-size: 0.9rem; font-weight: bold;'><i>(For Presentation Purposes Only)</i></div>", unsafe_allow_html=True)
 
     with st.expander("Configure Patient Profile", expanded=is_expanded):
         with st.form("patient_form"):
@@ -466,7 +458,6 @@ with tab_search:
             st.session_state.analysis_results = {}
             st.session_state.comparison_report = "" 
             
-            # Update state with form values
             st.session_state.user_zip = zip_input 
             st.session_state.form_diagnosis = diagnosis
             st.session_state.form_metastasis = metastasis
@@ -481,7 +472,6 @@ with tab_search:
             sex_s = sex if sex != "Select..." else "Unknown"
             zip_s = zip_input if zip_input else "Not provided"
             
-            # FULL PROFILE STRING FOR AI
             st.session_state.patient_profile_str = f"""
             Age: {age_s}, Sex: {sex_s}, Zip: {zip_s}
             Diagnosis: {diagnosis}
@@ -498,7 +488,6 @@ with tab_search:
                 data = fetch_clinical_trials(search_term)
                 raw_studies = data.get('studies', [])
                 
-                # Sort Logic
                 processed = []
                 for study in raw_studies:
                     dist_miles = float('inf') 
@@ -528,8 +517,6 @@ with tab_search:
                     processed.sort(key=lambda x: x['_sort_distance'])
                 
                 st.session_state.studies = processed
-                
-                # AI Report Generation
                 st.session_state.treatment_report = generate_treatment_report(st.session_state.patient_profile_str)
             
             st.rerun()
@@ -623,7 +610,7 @@ with tab_saved:
         """)
 
 # ==========================================
-# TAB 4: FUTURE ROADMAP (NEW)
+# TAB 4: FUTURE ROADMAP
 # ==========================================
 with tab_roadmap:
     st.markdown("### 🚀 C-Answer: Phase 2 Roadmap")
