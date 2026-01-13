@@ -48,12 +48,14 @@ st.markdown("""
         font-weight: 700;
         border: 1px solid rgba(96, 165, 250, 0.3);
         margin-left: 10px;
-        text-decoration: none; /* No underline for link */
+        text-decoration: none;
+        transition: all 0.2s ease;
     }
     
     .distance-badge:hover {
-        background-color: rgba(96, 165, 250, 0.2);
-        color: white;
+        background-color: rgba(96, 165, 250, 0.25);
+        color: #ffffff;
+        border-color: #60A5FA;
     }
     
     div.stButton > button {
@@ -81,11 +83,11 @@ def clean_text(text):
 
 def calculate_nearest_site(user_zip, locations):
     """
-    Finds the closest study site to the user's zip code.
-    Returns: (Distance in Miles, City, State, Google Maps URL)
+    Finds the closest study site and builds a precise Google Maps link.
+    Returns: (Distance, Facility Name, City, State, Map URL)
     """
     if not user_zip or not locations:
-        return None, None, None, None
+        return None, None, None, None, None
         
     try:
         dist = pgeocode.GeoDistance('us')
@@ -95,7 +97,7 @@ def calculate_nearest_site(user_zip, locations):
         for loc in locations:
             if loc.get('country') != 'United States':
                 continue
-                
+            
             site_zip = loc.get('zip')
             if site_zip:
                 clean_zip = str(site_zip)[:5]
@@ -107,21 +109,24 @@ def calculate_nearest_site(user_zip, locations):
 
         if nearest_loc and min_km != float('inf'):
             miles = int(min_km * 0.621371)
-            city = nearest_loc.get('city')
-            state = nearest_loc.get('state')
             
-            # Construct Google Maps Link
-            # Query format: "City, State Zip"
+            # Extract Facility Details
+            facility = nearest_loc.get('facility', 'Study Site')
+            city = nearest_loc.get('city', '')
+            state = nearest_loc.get('state', '')
             zip_code = nearest_loc.get('zip', '')
-            query = f"{city}, {state} {zip_code}".replace(" ", "+")
+            
+            # Create a robust search query for Google Maps
+            # "Facility Name, City, State Zip" works 99% of the time for finding the exact building
+            query = f"{facility}, {city}, {state} {zip_code}".replace(" ", "+")
             maps_url = f"https://www.google.com/maps/search/?api=1&query={query}"
             
-            return miles, city, state, maps_url
+            return miles, facility, city, state, maps_url
             
     except Exception:
-        return None, None, None, None
+        return None, None, None, None, None
         
-    return None, None, None, None
+    return None, None, None, None, None
 
 def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf = FPDF()
@@ -295,7 +300,39 @@ with tab_search:
             
             with st.spinner(f"Scanning ClinicalTrials.gov for '{search_term}'..."):
                 data = fetch_clinical_trials(search_term)
-                st.session_state.studies = data.get('studies', [])
+                raw_studies = data.get('studies', [])
+                
+                # --- SORTING LOGIC ---
+                processed_studies = []
+                for study in raw_studies:
+                    dist_miles = float('inf') 
+                    dist_data = None
+                    
+                    if zip_input:
+                        protocol = study.get('protocolSection', {})
+                        loc_mod = protocol.get('contactsLocationsModule', {})
+                        loc_list = loc_mod.get('locations', [])
+                        
+                        # Get detailed address info
+                        miles, fac, city, state, url = calculate_nearest_site(zip_input, loc_list)
+                        if miles is not None:
+                            dist_miles = miles
+                            dist_data = {
+                                "miles": miles, 
+                                "facility": fac,
+                                "city": city, 
+                                "state": state, 
+                                "url": url
+                            }
+                    
+                    study['_sort_distance'] = dist_miles
+                    study['_dist_data'] = dist_data
+                    processed_studies.append(study)
+                
+                if zip_input:
+                    processed_studies.sort(key=lambda x: x['_sort_distance'])
+                
+                st.session_state.studies = processed_studies
                 
                 biomarkers = "KRAS Wild-type" if kras else "None specified"
                 st.session_state.treatment_report = generate_treatment_report(diagnosis, metastasis, biomarkers)
@@ -314,16 +351,16 @@ with tab_search:
             desc_mod = protocol.get('descriptionModule', {})
             elig_mod = protocol.get('eligibilityModule', {})
             
-            # --- LOCATION LOGIC ---
-            locations_module = protocol.get('contactsLocationsModule', {})
-            location_list = locations_module.get('locations', [])
-            
+            dist_data = trial.get('_dist_data')
             dist_str = ""
-            if st.session_state.user_zip and location_list:
-                miles, city, state, map_url = calculate_nearest_site(st.session_state.user_zip, location_list)
-                if miles is not None:
-                    # Added 'target=_blank' to open in new tab
-                    dist_str = f"<a href='{map_url}' target='_blank' class='distance-badge'>📍 {city}, {state} ({miles} mi)</a>"
+            
+            # UPDATED: Display facility name if available
+            if dist_data:
+                # Truncate facility name if too long to keep badge clean
+                fac_name = dist_data['facility']
+                if len(fac_name) > 25: fac_name = fac_name[:25] + "..."
+                
+                dist_str = f"<a href='{dist_data['url']}' target='_blank' class='distance-badge'>📍 {fac_name} ({dist_data['miles']} mi)</a>"
             
             nct_id = id_mod.get('nctId', 'N/A')
             title = id_mod.get('briefTitle', 'No Title')
