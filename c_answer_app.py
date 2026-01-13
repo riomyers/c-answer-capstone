@@ -71,12 +71,14 @@ def clean_text(text):
     """
     Cleans text for FPDF:
     1. Replaces smart quotes/dashes.
-    2. STRIPS MARKDOWN (###, **, __) so it looks like plain text.
+    2. STRIPS ALL MARKDOWN (#, *, __) so it looks like plain text.
     """
     if not text: return ""
     
     # 1. Remove Markdown artifacts
-    text = text.replace('### ', '')  # Remove header hashes
+    text = text.replace('###', '')   # Remove triple hashes
+    text = text.replace('##', '')    # Remove double hashes
+    text = text.replace('#', '')     # Remove single hashes
     text = text.replace('**', '')    # Remove bolding stars
     text = text.replace('__', '')    # Remove italics underscores
     
@@ -114,7 +116,7 @@ def create_pdf(saved_trials, patient_info, treatment_report):
         pdf.ln(5)
         
         pdf.set_font("Arial", '', 11)
-        # Using clean_text removes the ### and ** automatically
+        # Using clean_text removes the # and ** automatically
         pdf.multi_cell(0, 6, clean_text(treatment_report))
         pdf.ln(10)
         
@@ -139,7 +141,6 @@ def create_pdf(saved_trials, patient_info, treatment_report):
             pdf.write(6, "AI Analysis: ")
             
             pdf.set_font("Arial", '', 10)
-            # Remove "Status:" prefix if present to avoid redundancy
             status_text = details['match_status'].replace("Status: ", "")
             pdf.multi_cell(0, 6, clean_text(status_text))
         
@@ -190,6 +191,7 @@ tab_search, tab_insights, tab_saved = st.tabs(["🔍 Trial Search", "📊 Treatm
 # TAB 1: SEARCH
 # ==========================================
 with tab_search:
+    # SEARCH PANEL
     is_expanded = not st.session_state.search_performed
     with st.expander("Configure Patient Profile", expanded=is_expanded):
         with st.form("patient_form"):
