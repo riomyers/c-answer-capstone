@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pgeocode
 import pandas as pd
+import math
 from fpdf import FPDF
 from pypdf import PdfReader
 from ai_agent import analyze_trial_eligibility, generate_treatment_report, compare_trials, extract_patient_data
@@ -88,78 +89,139 @@ def spacer(height=20):
     st.markdown(f"<div style='height: {height}px'></div>", unsafe_allow_html=True)
 
 def clean_text(text):
-    if not text: return ""
-    text = text.replace('###', '').replace('##', '').replace('#', '').replace('**', '').replace('__', '')
-    replacements = {'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'}
-    for char, replacement in replacements.items(): text = text.replace(char, replacement)
+    """
+    Cleans text for FPDF generation. 
+    Removes Markdown artifacts and replaces non-latin characters.
+    """
+    if not text:
+        return ""
+    
+    # Remove Markdown headers/bolding
+    text = text.replace('###', '')
+    text = text.replace('##', '')
+    text = text.replace('#', '')
+    text = text.replace('**', '')
+    text = text.replace('__', '')
+    
+    # Typography Replacements (Fixes ? characters in PDF)
+    replacements = {
+        '\u2018': "'", 
+        '\u2019': "'", 
+        '\u201c': '"', 
+        '\u201d': '"',
+        '\u2013': '-', 
+        '\u2014': '-',
+        '\u2022': '-',  # Bullet -> Hyphen
+        '•': '-',       # Bullet -> Hyphen
+        '\u2026': '...',
+        '\u00A0': ' '
+    }
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    
+    # Safe Encode
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 def calculate_nearest_site(user_zip, locations):
+    """
+    Finds the closest study site to the user's zip code using pgeocode.
+    Returns: (Distance, Facility Name, City, State, Map URL)
+    """
     if not user_zip or not locations:
         return None, None, None, None, None
+        
     try:
         dist = pgeocode.GeoDistance('us')
         min_km = float('inf')
         nearest_loc = None
+        
         for loc in locations:
             if loc.get('country') != 'United States':
                 continue
+            
             site_zip = loc.get('zip')
             if site_zip:
                 clean_zip = str(site_zip)[:5]
                 d_km = dist.query_postal_code(user_zip, clean_zip)
+                
                 if d_km is not None and not pd.isna(d_km) and d_km < min_km:
                     min_km = d_km
                     nearest_loc = loc
+
         if nearest_loc and min_km != float('inf'):
             miles = int(min_km * 0.621371)
+            
             facility = nearest_loc.get('facility', 'Study Site')
             city = nearest_loc.get('city', '')
             state = nearest_loc.get('state', '')
             zip_code = nearest_loc.get('zip', '')
+            
+            # Smart Navigation Link
             query = f"{facility}, {city}, {state} {zip_code}".replace(" ", "+")
             maps_url = f"https://www.google.com/maps/search/?api=1&query={query}"
+            
             return miles, facility, city, state, maps_url
+            
     except Exception:
         return None, None, None, None, None
+        
     return None, None, None, None, None
 
 def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
+    """
+    Generates a professional PDF report.
+    Includes Dynamic Sizing for the Profile Box and Safety Checks for Page Breaks.
+    """
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Header
+    # --- HEADER ---
     pdf.set_font("Arial", 'B', 24)
     pdf.cell(0, 10, "C-Answer", ln=True, align='C')
     pdf.set_font("Arial", 'I', 12)
     pdf.cell(0, 10, "Intelligent Clinical Trial & Recovery Plan", ln=True, align='C')
     pdf.ln(10)
     
-    # Profile
+    # --- PATIENT PROFILE (Dynamic Height) ---
+    pdf.set_font("Arial", '', 10)
+    clean_profile = clean_text(patient_info)
+    
+    # Calculate required height approx (chars per line ~95)
+    num_lines = max(1, math.ceil(len(clean_profile) / 95))
+    box_height = (num_lines * 5) + 20  # Height based on text + padding
+    
     pdf.set_fill_color(240, 240, 240) 
-    pdf.rect(10, pdf.get_y(), 190, 25, 'F') 
+    pdf.rect(10, pdf.get_y(), 190, box_height, 'F') 
+    
     pdf.set_xy(12, pdf.get_y() + 5)
     pdf.set_font("Arial", 'B', 12)
     pdf.write(6, "Patient Profile Summary:")
     pdf.ln(8)
     pdf.set_font("Arial", '', 10)
-    pdf.multi_cell(0, 5, clean_text(patient_info))
+    pdf.multi_cell(0, 5, clean_profile)
     pdf.ln(10)
     
-    # 1. Landscape
+    # --- 1. TREATMENT LANDSCAPE ---
     if treatment_report:
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(0, 10, "1. Treatment Landscape", ln=True)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
+        
         lines = treatment_report.split('\n')
         for line in lines:
             line = clean_text(line).strip()
-            if not line: continue
-            if pdf.get_y() > 250: pdf.add_page()
-            if (len(line) < 60 and not line.endswith('.') and not line.startswith('*')):
-                pdf.ln(6)
+            if not line:
+                continue
+            
+            # Page Break Check
+            if pdf.get_y() > 265:
+                pdf.add_page()
+            
+            # Smart Header Detection
+            if (len(line) < 60 and not line.endswith('.') and not line.startswith('-')):
+                pdf.ln(4)
                 pdf.set_font("Arial", 'B', 11)
                 pdf.multi_cell(0, 6, line)
             else:
@@ -167,47 +229,69 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
                 pdf.multi_cell(0, 6, line)
         pdf.ln(10)
         
-    # 2. Comparison
+    # --- 2. AI COMPARISON ---
     if comparison_report:
-        if pdf.get_y() > 200: pdf.add_page()
+        # Force page break if low on space
+        if pdf.get_y() > 240:
+            pdf.add_page()
+            
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(0, 10, "2. AI Comparison of Selected Trials", ln=True)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
+        
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 6, clean_text(comparison_report))
         pdf.ln(10)
         
-    # 3. Trial Details
-    if pdf.get_y() > 220: pdf.add_page()
+    # --- 3. TRIAL DETAILS ---
+    if pdf.get_y() > 240:
+        pdf.add_page()
+        
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "3. Trial Details", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
     pdf.ln(5)
     
     for nct_id, details in saved_trials.items():
-        if pdf.get_y() > 200: pdf.add_page()
+        # Page Break Check
+        if pdf.get_y() > 250:
+            pdf.add_page()
+        
+        # Title
         pdf.set_text_color(0, 51, 102) 
         pdf.set_font("Arial", 'B', 12)
-        pdf.multi_cell(0, 8, f"{clean_text(details['title'])}")
+        pdf.multi_cell(0, 6, f"{clean_text(details['title'])}")
+        
+        # ID
         pdf.set_text_color(100, 100, 100)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 6, f"Trial ID: {nct_id}", ln=True)
+        
+        # Summary
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", '', 10)
-        pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") 
-        pdf.ln(4)
+        pdf.multi_cell(0, 5, clean_text(details['summary'][:1000]) + "...") 
+        pdf.ln(3)
+        
+        # Match Analysis Box
         if details.get('match_status'):
-            if pdf.get_y() > 250: pdf.add_page()
+            # Only start this box if we have space, otherwise page break
+            if pdf.get_y() > 260:
+                pdf.add_page()
+            
             pdf.set_fill_color(245, 255, 250) 
             pdf.set_font("Arial", 'B', 10)
             pdf.cell(0, 6, "AI Match Analysis:", ln=True, fill=True)
+            
             pdf.set_font("Arial", '', 10)
             status_text = details['match_status'].replace("Status: ", "")
-            pdf.multi_cell(0, 6, clean_text(status_text), fill=True)
+            pdf.multi_cell(0, 5, clean_text(status_text), fill=True)
+        
         pdf.ln(5)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
-        pdf.ln(8)
+        pdf.ln(5)
+        
     return pdf.output(dest='S').encode('latin-1')
 
 def fetch_clinical_trials(condition, status="RECRUITING"):
@@ -226,20 +310,27 @@ def fetch_clinical_trials(condition, status="RECRUITING"):
         return {}
 
 def render_trial_card(trial):
-    """Renders a single trial card. Uses 'dist_data' to display navigation link."""
+    """
+    Renders a single trial card. Uses 'dist_data' to display navigation link.
+    """
     protocol = trial.get('protocolSection', {})
     id_mod = protocol.get('identificationModule', {})
     desc_mod = protocol.get('descriptionModule', {})
     elig_mod = protocol.get('eligibilityModule', {})
+    
     nct_id = id_mod.get('nctId', 'N/A')
     title = id_mod.get('briefTitle', 'No Title')
     summary = desc_mod.get('briefSummary', 'No summary.')
     criteria = elig_mod.get('eligibilityCriteria', 'Not listed.')
+    
     dist_data = trial.get('_dist_data')
     dist_str = ""
+    
     if dist_data:
+        # Show Facility Name (Truncated) + Distance
         fac_name = dist_data['facility']
         if len(fac_name) > 30: fac_name = fac_name[:30] + "..."
+        
         dist_str = f"<a href='{dist_data['url']}' target='_blank' class='distance-badge'>📍 {fac_name} ({dist_data['miles']} mi)</a>"
     
     with st.expander(f"{title}"):
@@ -250,14 +341,17 @@ def render_trial_card(trial):
             {dist_str}
         </div>
         """, unsafe_allow_html=True)
+        
         st.write(summary)
         st.markdown("---")
+        
         c1, c2 = st.columns([1, 1])
         with c1:
             st.caption("Eligibility Criteria")
             st.text_area("Raw Data", criteria, height=150, disabled=True, key=f"crit_{nct_id}")
         with c2:
             st.markdown("#### 🧠 AI Analysis")
+            
             existing_res = st.session_state.analysis_results.get(nct_id)
             if existing_res:
                 if "Status: Match" in existing_res: st.success(existing_res)
@@ -265,6 +359,7 @@ def render_trial_card(trial):
                 else: st.warning(existing_res)
             else:
                 st.info("Ready to analyze.")
+            
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("Analyze", key=f"btn_{nct_id}"):
@@ -324,8 +419,10 @@ tab_search, tab_insights, tab_saved = st.tabs(["🔍 Trial Search", "📊 Treatm
 with tab_search:
     is_expanded = not st.session_state.search_performed
     
+    # 1. AUTO-FILL MODULE
     with st.expander("📄 Auto-Fill from Medical Records (Optional)", expanded=is_expanded):
         uploaded_files = st.file_uploader("Upload Pathology Reports (PDF)", type="pdf", accept_multiple_files=True)
+        # Manual Process Button to prevent loops
         if uploaded_files:
             if st.button("🚀 Extract Data from Files"):
                 with st.spinner("Analyzing documents & Extracting biomarkers..."):
@@ -335,25 +432,31 @@ with tab_search:
                             reader = PdfReader(pdf_file)
                             for page in reader.pages:
                                 all_text += page.extract_text() + "\n"
+                        
                         extracted = extract_patient_data(all_text)
                         if extracted:
                             st.session_state.form_diagnosis = extracted.get("diagnosis", "")
                             st.session_state.form_metastasis = extracted.get("metastasis", "")
+                            
+                            # Safely handle age extraction
                             extracted_age = extracted.get("age", None)
                             if extracted_age and str(extracted_age).isdigit():
                                 st.session_state.form_age = int(extracted_age)
                             else:
                                 st.session_state.form_age = None
+                                
                             st.session_state.form_sex = extracted.get("sex", "Select...")
                             st.session_state.form_kras = extracted.get("kras_wild_type", False)
                             st.session_state.form_ecog = extracted.get("ecog", "0 - Fully Active")
                             st.session_state.form_lines = extracted.get("prior_lines", "None (1st Line)")
                             st.session_state.form_msi = extracted.get("msi", "Unknown")
+                            
                             st.success(f"✅ Extracted profile data from {len(uploaded_files)} documents!")
                             st.rerun()
                     except Exception as e:
                         st.error(f"Error reading documents: {e}")
 
+    # 2. PATIENT FORM
     with st.expander("Configure Patient Profile", expanded=is_expanded):
         with st.form("patient_form"):
             diagnosis = st.text_input("Primary Condition", value=st.session_state.form_diagnosis, placeholder="e.g. Colorectal Cancer")
@@ -374,6 +477,7 @@ with tab_search:
             with c6: msi = st.selectbox("MSI/MMR Status", ["Unknown", "MSS (Stable)", "MSI-High (Instable)"], index=0)
             
             st.write("**Biomarkers & Filters**")
+            # [1,1,2] Ratio for tighter spacing
             c7, c8, _ = st.columns([1, 1, 2])
             with c7: kras = st.checkbox("KRAS Wild-type", value=st.session_state.form_kras)
             with c8: phase1 = st.checkbox("Exclude Phase 1", value=False)
@@ -381,6 +485,7 @@ with tab_search:
             spacer(20) 
             submitted = st.form_submit_button("Find Matching Trials", type="primary")
 
+    # 3. SEARCH EXECUTION
     if submitted:
         if not diagnosis.strip():
             st.warning("⚠️ Please enter a diagnosis.")
@@ -390,6 +495,7 @@ with tab_search:
             st.session_state.comparison_report = "" 
             st.session_state.user_zip = zip_input 
             
+            # Persist values
             st.session_state.form_diagnosis = diagnosis
             st.session_state.form_metastasis = metastasis
             st.session_state.form_age = age
@@ -399,10 +505,12 @@ with tab_search:
             st.session_state.form_lines = lines
             st.session_state.form_msi = msi
             
+            # Use defaults for display if empty
             age_s = str(age) if age else "Unknown"
             sex_s = sex if sex != "Select..." else "Unknown"
             zip_s = zip_input if zip_input else "Not provided"
             
+            # FULL PROFILE STRING FOR AI
             st.session_state.patient_profile_str = f"""
             Age: {age_s}, Sex: {sex_s}, Zip: {zip_s}
             Diagnosis: {diagnosis}
@@ -419,18 +527,28 @@ with tab_search:
                 data = fetch_clinical_trials(search_term)
                 raw_studies = data.get('studies', [])
                 
+                # Sort Logic
                 processed = []
                 for study in raw_studies:
                     dist_miles = float('inf') 
                     dist_data = None
+                    
                     if zip_input:
                         protocol = study.get('protocolSection', {})
                         loc_mod = protocol.get('contactsLocationsModule', {})
                         loc_list = loc_mod.get('locations', [])
+                        
                         miles, fac, city, state, url = calculate_nearest_site(zip_input, loc_list)
                         if miles is not None:
                             dist_miles = miles
-                            dist_data = {"miles": miles, "facility": fac, "city": city, "state": state, "url": url}
+                            dist_data = {
+                                "miles": miles, 
+                                "facility": fac,
+                                "city": city, 
+                                "state": state, 
+                                "url": url
+                            }
+                    
                     study['_sort_distance'] = dist_miles
                     study['_dist_data'] = dist_data
                     processed.append(study)
@@ -439,21 +557,27 @@ with tab_search:
                     processed.sort(key=lambda x: x['_sort_distance'])
                 
                 st.session_state.studies = processed
+                
+                # AI Report Generation
                 st.session_state.treatment_report = generate_treatment_report(st.session_state.patient_profile_str)
             
             st.rerun()
 
+    # 4. RESULTS RENDER
     trials = st.session_state.studies
     if trials:
         if st.session_state.user_zip:
             scored = [t for t in trials if t['_sort_distance'] != float('inf')]
             unscored = [t for t in trials if t['_sort_distance'] == float('inf')]
+            
             if scored:
                 st.markdown(f"<div class='section-header'>📍 Nearest to You ({len(scored)})</div>", unsafe_allow_html=True)
                 for t in scored: render_trial_card(t)
+            
             if unscored:
                 st.markdown(f"<div class='section-header'>🌎 Other Recruiting Trials ({len(unscored)})</div>", unsafe_allow_html=True)
                 for t in unscored: render_trial_card(t)
+                
             if not scored and not unscored:
                 st.warning("No trials found matching your search.")
         else:
@@ -477,20 +601,39 @@ with tab_insights:
 # ==========================================
 with tab_saved:
     saved = st.session_state.saved_trials
+    
     st.markdown("### 📁 Saved Trials Report")
+
     if saved:
         st.success(f"You have saved {len(saved)} trials.")
+        
+        # Comparator
         if len(saved) > 1:
             if st.button("⚖️ Compare Selected Trials (AI)", type="primary"):
                 with st.spinner("Generating comparison matrix..."):
                     st.session_state.comparison_report = compare_trials(saved)
+        
         if st.session_state.comparison_report:
             st.markdown("---")
             st.markdown("#### ⚖️ AI Comparison Matrix")
             st.markdown(st.session_state.comparison_report)
             st.markdown("---")
-        pdf_bytes = create_pdf(saved, st.session_state.patient_profile_str, st.session_state.treatment_report, st.session_state.comparison_report)
-        st.download_button(label="📄 Download PDF Report for Doctor", data=pdf_bytes, file_name="C-Answer_Report.pdf", mime="application/pdf")
+
+        # PDF Download
+        pdf_bytes = create_pdf(
+            saved, 
+            st.session_state.patient_profile_str, 
+            st.session_state.treatment_report,
+            st.session_state.comparison_report
+        )
+        
+        st.download_button(
+            label="📄 Download PDF Report for Doctor",
+            data=pdf_bytes,
+            file_name="C-Answer_Report.pdf",
+            mime="application/pdf"
+        )
+        
         st.markdown("---")
         for nid, det in saved.items():
             st.markdown(f"**{det['title']}**")
