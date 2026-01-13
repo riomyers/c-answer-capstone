@@ -10,64 +10,82 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- CORRECTED CSS (Dark Mode Safe) ---
+# --- ELEGANT DESIGN SYSTEM (CSS) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    /* 1. IMPORT FONTS: Playfair Display (Headers) & Lato (Body) */
+    @import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap');
     
+    /* 2. APPLY FONTS */
     html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Lato', sans-serif;
     }
     
+    h1, h2, h3 {
+        font-family: 'Playfair Display', serif;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+    
+    /* 3. CLEAN UP UI ELEMENTS */
     [data-testid="InputInstructions"] { display: none !important; }
     
-    /* FIX: Force Dark Background for Cards so White Text is visible */
+    /* 4. CARD STYLING (The "Glass" Look) */
     div.stExpander {
-        border: 1px solid #334155; 
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 12px;
         margin-bottom: 16px;
-        background-color: #1E293B !important; /* Slate-800 */
+        background-color: #1E293B !important; /* Dark Slate Base */
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
     }
     
-    /* FIX: Force Search Panel to match Dark Theme */
     div[data-testid="stExpander"] > details {
         background-color: #1E293B !important;
         border-radius: 12px;
     }
-
-    /* Badges */
+    
+    /* 5. ELEGANT BADGES */
     .status-badge {
-        background-color: #064E3B; 
-        color: #6EE7B7; 
-        padding: 4px 12px;
-        border-radius: 20px;
+        background-color: rgba(16, 185, 129, 0.1); /* Subtle Emerald */
+        color: #6EE7B7; /* Bright Emerald Text */
+        padding: 6px 16px;
+        border-radius: 99px;
+        font-family: 'Lato', sans-serif;
         font-size: 0.75rem;
         font-weight: 700;
         text-transform: uppercase;
-        border: 1px solid #059669;
+        letter-spacing: 1px;
+        border: 1px solid rgba(16, 185, 129, 0.3);
     }
     
-    /* Buttons */
+    /* 6. PRIMARY BUTTON (Gradient) */
     div.stButton > button {
-        background: #4F46E5; 
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); /* Indigo Gradient */
         color: white;
         border: none;
-        padding: 0.75rem 1.2rem;
+        padding: 0.75rem 1.5rem;
         border-radius: 8px;
+        font-family: 'Lato', sans-serif;
         font-weight: 600;
+        letter-spacing: 0.5px;
+        transition: all 0.3s ease;
         width: 100%;
         margin-top: 10px;
+        box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
     }
+    
     div.stButton > button:hover {
-        background-color: #4338ca;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.6);
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
         color: white;
     }
     
-    /* Mobile Layout Tweaks */
-    @media (max-width: 640px) {
-        .stTextInput input {
-            font-size: 16px; /* Prevents auto-zoom on iPhone */
-        }
+    /* 7. TEXT INPUTS (Clean & Spacious) */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+        border-radius: 8px;
+        padding-top: 10px;
+        padding-bottom: 10px;
     }
 
 </style>
@@ -94,7 +112,7 @@ def fetch_clinical_trials(condition, status="RECRUITING"):
         st.error(f"Error connecting to database: {e}")
         return {}
 
-# --- INITIALIZE STATE ---
+# --- STATE INITIALIZATION ---
 if 'studies' not in st.session_state:
     st.session_state.studies = []
 if 'analysis_results' not in st.session_state:
@@ -104,13 +122,24 @@ if 'active_nct_id' not in st.session_state:
 if 'search_performed' not in st.session_state:
     st.session_state.search_performed = False
 
-# --- HEADER ---
-st.title("C-Answer")
-st.markdown("### Intelligent Clinical Trial Matching & Recovery Planning")
-spacer(10)
+# --- HEADER SECTION (With Restored Ribbon) ---
+col_logo, col_title = st.columns([1, 8])
 
-# --- SEARCH PANEL (Auto-Collapsing) ---
-# Logic: Keep open until a search happens
+with col_logo:
+    # Large Elegant Ribbon
+    st.markdown("<div style='font-size: 3.5rem; line-height: 1; text-align: center;'>🎗️</div>", unsafe_allow_html=True)
+
+with col_title:
+    st.markdown("""
+    <h1 style='margin-bottom: 0px; font-size: 3rem;'>C-Answer</h1>
+    <p style='font-size: 1.1rem; opacity: 0.8; margin-top: 5px; font-family: "Lato", sans-serif;'>
+        Intelligent Clinical Trial Matching & Recovery Planning
+    </p>
+    """, unsafe_allow_html=True)
+
+spacer(20)
+
+# --- SMART SEARCH PANEL ---
 is_expanded = not st.session_state.search_performed
 
 with st.expander("🔍  Search Settings & Patient Profile", expanded=is_expanded):
@@ -141,7 +170,7 @@ with st.expander("🔍  Search Settings & Patient Profile", expanded=is_expanded
             phase1 = st.checkbox("Exclude Phase 1", value=False)
         
         spacer(20)
-        submitted = st.form_submit_button("🔍 Find Matching Trials", type="primary")
+        submitted = st.form_submit_button("Find Matching Trials", type="primary")
 
 # --- SEARCH LOGIC ---
 if submitted:
@@ -173,7 +202,7 @@ if not trials:
         st.info("👆 Expand the search panel above to begin.")
 
 else:
-    # Stats Bar
+    # Stats Bar with Elegant Styling
     col1, col2, col3 = st.columns(3)
     col1.metric("Trials Found", len(trials))
     col2.metric("Status", "Recruiting")
@@ -196,10 +225,11 @@ else:
         should_be_expanded = (nct_id == st.session_state.active_nct_id)
 
         with st.expander(f"{title}", expanded=should_be_expanded):
+            # Header Row inside Card
             st.markdown(f"""
-            <div style="margin-bottom: 15px;">
+            <div style="margin-bottom: 15px; display: flex; align-items: center;">
                 <span class="status-badge">Recruiting</span> 
-                <span style="margin-left: 10px; color: #94a3b8; font-family: monospace;">{nct_id}</span>
+                <span style="margin-left: 15px; color: #94a3b8; font-family: monospace; font-size: 0.9em;">{nct_id}</span>
             </div>
             """, unsafe_allow_html=True)
             
@@ -228,7 +258,7 @@ else:
                     else:
                         st.warning(existing_result)
                 else:
-                    st.info("Check eligibility analysis.")
+                    st.info("AI Analysis ready. Click to verify eligibility.")
                 
                 if st.button(f"Analyze Match for {nct_id}", key=f"btn_{nct_id}"):
                     
@@ -238,11 +268,11 @@ else:
                     profile_str = f"Age: {age_str}, Sex: {sex_str}, Diagnosis: {diagnosis}, Metastasis: {metastasis}"
                     if kras: profile_str += ", KRAS Wild-type"
                     
-                    with st.spinner("Consulting AI Agent..."):
+                    with st.spinner("Analyzing criteria against your profile..."):
                         ai_result = analyze_trial_eligibility(criteria, profile_str)
                     
                     st.session_state.analysis_results[nct_id] = ai_result
                     st.session_state.active_nct_id = nct_id 
                     st.rerun()
                 
-                st.markdown(f"[View Official Record ↗](https://clinicaltrials.gov/study/{nct_id})")
+                st.markdown(f"<div style='margin-top: 15px; text-align: right;'><a href='https://clinicaltrials.gov/study/{nct_id}' target='_blank' style='color: #818cf8; text-decoration: none; font-weight: 600;'>View Official Record ↗</a></div>", unsafe_allow_html=True)
