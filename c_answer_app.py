@@ -3,6 +3,7 @@ import requests
 import pgeocode
 import pandas as pd
 import math
+import unicodedata
 from fpdf import FPDF
 from pypdf import PdfReader
 from ai_agent import analyze_trial_eligibility, generate_treatment_report, compare_trials, extract_patient_data
@@ -90,35 +91,26 @@ def spacer(height=20):
 
 def clean_text(text):
     """
-    Ultra-aggressive cleaning for FPDF to prevent artifacts.
+    "Nuclear" cleaning function to ensure NO question marks or encoding errors in PDF.
     """
-    if not text:
-        return ""
+    if not text: return ""
     
-    # 1. Remove Markdown
+    # 1. Remove Markdown artifacts
     text = text.replace('###', '').replace('##', '').replace('#', '').replace('**', '').replace('__', '')
     
-    # 2. Normalize Whitespace (Fixes hidden non-breaking spaces)
-    text = text.replace('\u00A0', ' ').replace('\u200B', '')
-    
-    # 3. Typographical Replacements
+    # 2. Manual replacements for common problem characters
     replacements = {
-        '\u2018': "'", 
-        '\u2019': "'", 
-        '\u201c': '"', 
-        '\u201d': '"',
-        '\u2013': '-', 
-        '\u2014': '-',
-        '\u2022': '-',  
-        '•': '-',       
-        '\u2026': '...',
-        '?': '-' # Force replace rogue question marks if they persist in specific contexts
+        '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
+        '\u2013': '-', '\u2014': '-', '\u2022': '-', '•': '-',
+        '\u2026': '...', '\u00A0': ' ', '–': '-'
     }
     for char, replacement in replacements.items():
         text = text.replace(char, replacement)
     
-    # 4. Final Safe Encode
-    return text.encode('latin-1', 'replace').decode('latin-1')
+    # 3. Normalize Unicode (turns "fancy" chars into standard chars)
+    # 4. Encode to ASCII and IGNORE errors (drops anything that can't be fixed)
+    # This guarantees the final string is 100% safe for FPDF.
+    return unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
 
 def calculate_nearest_site(user_zip, locations):
     if not user_zip or not locations:
@@ -151,54 +143,42 @@ def calculate_nearest_site(user_zip, locations):
             query = f"{facility}, {city}, {state} {zip_code}".replace(" ", "+")
             maps_url = f"https://www.google.com/maps/search/?api=1&query={query}"
             return miles, facility, city, state, maps_url
+            
     except Exception:
         return None, None, None, None, None
         
     return None, None, None, None, None
 
 def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
-    """
-    Generates a clean PDF report. 
-    REMOVED: Grey box background (caused layout issues).
-    FIXED: Question mark artifacts.
-    """
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # --- HEADER ---
+    # Header
     pdf.set_font("Arial", 'B', 24)
     pdf.cell(0, 10, "C-Answer", ln=True, align='C')
     pdf.set_font("Arial", 'I', 12)
     pdf.cell(0, 10, "Intelligent Clinical Trial & Recovery Plan", ln=True, align='C')
     pdf.ln(10)
     
-    # --- PATIENT PROFILE (Clean Text Only) ---
+    # Profile (Clean text, no box)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "Patient Profile Summary:", ln=True)
-    
     pdf.set_font("Arial", '', 10)
-    pdf.multi_cell(0, 6, clean_text(patient_info))
-    pdf.ln(10)
+    pdf.multi_cell(0, 5, clean_text(patient_info))
+    pdf.ln(8)
     
-    # --- 1. TREATMENT LANDSCAPE ---
+    # 1. Landscape
     if treatment_report:
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(0, 10, "1. Treatment Landscape", ln=True)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
-        
         lines = treatment_report.split('\n')
         for line in lines:
             line = clean_text(line).strip()
-            if not line:
-                continue
-            
-            # Page Break Check
-            if pdf.get_y() > 265:
-                pdf.add_page()
-            
-            # Smart Header Detection
+            if not line: continue
+            if pdf.get_y() > 265: pdf.add_page()
             if (len(line) < 60 and not line.endswith('.') and not line.startswith('-')):
                 pdf.ln(4)
                 pdf.set_font("Arial", 'B', 11)
@@ -208,65 +188,49 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
                 pdf.multi_cell(0, 6, line)
         pdf.ln(10)
         
-    # --- 2. AI COMPARISON ---
+    # 2. Comparison
     if comparison_report:
-        if pdf.get_y() > 240:
-            pdf.add_page()
-            
+        if pdf.get_y() > 240: pdf.add_page()
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(0, 10, "2. AI Comparison of Selected Trials", ln=True)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
-        
         pdf.set_font("Arial", '', 10)
-        # Replacing the specific pattern "? [NCT..." if it occurs
-        clean_comp = clean_text(comparison_report).replace('? [', '- [')
-        pdf.multi_cell(0, 6, clean_comp)
+        pdf.multi_cell(0, 6, clean_text(comparison_report))
         pdf.ln(10)
         
-    # --- 3. TRIAL DETAILS ---
-    if pdf.get_y() > 240:
-        pdf.add_page()
-        
+    # 3. Trial Details
+    if pdf.get_y() > 240: pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "3. Trial Details", ln=True)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
     pdf.ln(5)
     
     for nct_id, details in saved_trials.items():
-        if pdf.get_y() > 250:
-            pdf.add_page()
+        if pdf.get_y() > 250: pdf.add_page()
         
-        # Title
         pdf.set_text_color(0, 51, 102) 
         pdf.set_font("Arial", 'B', 12)
         pdf.multi_cell(0, 6, f"{clean_text(details['title'])}")
         
-        # ID
         pdf.set_text_color(100, 100, 100)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 6, f"Trial ID: {nct_id}", ln=True)
         
-        # Summary
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 5, clean_text(details['summary'][:1000]) + "...") 
         pdf.ln(3)
         
-        # Match Analysis Box
         if details.get('match_status'):
-            if pdf.get_y() > 260:
-                pdf.add_page()
-            
+            if pdf.get_y() > 260: pdf.add_page()
             pdf.set_fill_color(245, 255, 250) 
             pdf.set_font("Arial", 'B', 10)
             pdf.cell(0, 6, "AI Match Analysis:", ln=True, fill=True)
-            
             pdf.set_font("Arial", '', 10)
             status_text = details['match_status'].replace("Status: ", "")
             pdf.multi_cell(0, 5, clean_text(status_text), fill=True)
         
-        # Removed Extra Spacing Here
         pdf.ln(5)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
@@ -326,7 +290,6 @@ def render_trial_card(trial):
             st.text_area("Raw Data", criteria, height=150, disabled=True, key=f"crit_{nct_id}")
         with c2:
             st.markdown("#### 🧠 AI Analysis")
-            
             existing_res = st.session_state.analysis_results.get(nct_id)
             if existing_res:
                 if "Status: Match" in existing_res: st.success(existing_res)
