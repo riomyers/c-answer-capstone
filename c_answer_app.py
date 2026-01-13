@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-import pandas as pd
 from fpdf import FPDF
 from ai_agent import analyze_trial_eligibility, generate_treatment_report, compare_trials
 
@@ -56,6 +55,7 @@ def spacer(height=20):
 
 def clean_text(text):
     if not text: return ""
+    # Clean artifacts
     text = text.replace('###', '').replace('##', '').replace('#', '').replace('**', '').replace('__', '')
     replacements = {'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'}
     for char, replacement in replacements.items(): text = text.replace(char, replacement)
@@ -93,6 +93,7 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         for line in lines:
             line = clean_text(line).strip()
             if not line: continue
+            # Smart Spacing Logic
             if (len(line) < 60 and not line.endswith('.') and not line.startswith('*')):
                 pdf.ln(6)
                 pdf.set_font("Arial", 'B', 11)
@@ -102,14 +103,13 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
                 pdf.multi_cell(0, 6, line)
         pdf.ln(10)
         
-    # 2. Comparison Table (Simplified for PDF)
+    # 2. Comparison Table
     if comparison_report:
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(0, 10, "2. AI Comparison of Selected Trials", ln=True)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
         pdf.set_font("Arial", '', 10)
-        # We just dump the markdown text for now as tables in FPDF are complex
         pdf.multi_cell(0, 6, clean_text(comparison_report))
         pdf.ln(10)
         
@@ -138,7 +138,7 @@ def fetch_clinical_trials(condition, status="RECRUITING"):
     params = {
         "query.cond": condition,
         "filter.overallStatus": status,
-        "pageSize": 50, # Increased for better charts
+        "pageSize": 50,
         "sort": "LastUpdateSubmitDate"
     }
     try:
@@ -147,46 +147,6 @@ def fetch_clinical_trials(condition, status="RECRUITING"):
         return response.json()
     except Exception:
         return {}
-
-# --- VISUAL ANALYTICS FUNCTION ---
-def display_analytics(studies):
-    if not studies: return
-
-    # Extract Data for Charts
-    phases = []
-    sponsors = []
-    
-    for study in studies:
-        protocol = study.get('protocolSection', {})
-        design = protocol.get('designModule', {})
-        ident = protocol.get('identificationModule', {})
-        
-        # Get Phase
-        phase_list = design.get('phases', ['Not Specified'])
-        phases.append(phase_list[0] if phase_list else 'Not Specified')
-        
-        # Get Sponsor Class
-        org = ident.get('organization', {})
-        sponsors.append(org.get('class', 'Unknown'))
-    
-    # Create DataFrames
-    df_phase = pd.DataFrame(phases, columns=["Phase"])
-    df_sponsor = pd.DataFrame(sponsors, columns=["Sponsor"])
-    
-    # Display Charts
-    st.markdown("### 📊 Market Intelligence")
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        st.caption("Distribution by Trial Phase")
-        # Simple bar chart of counts
-        st.bar_chart(df_phase['Phase'].value_counts())
-        
-    with c2:
-        st.caption("Sponsorship (Industry vs. Public)")
-        st.bar_chart(df_sponsor['Sponsor'].value_counts())
-    
-    spacer(20)
 
 # --- STATE MANAGEMENT ---
 if 'studies' not in st.session_state: st.session_state.studies = []
@@ -239,7 +199,7 @@ with tab_search:
         else:
             st.session_state.search_performed = True
             st.session_state.analysis_results = {}
-            st.session_state.comparison_report = "" # Reset comparison
+            st.session_state.comparison_report = "" 
             
             age_s = str(age) if age else "Unknown"
             sex_s = sex if sex != "Select..." else "Unknown"
@@ -256,12 +216,9 @@ with tab_search:
             
             st.rerun()
 
-    # ANALYTICS & RESULTS
+    # RESULTS
     trials = st.session_state.studies
     if trials:
-        # SHOW CHARTS
-        display_analytics(trials)
-        
         col1, col2 = st.columns([3, 1])
         col1.markdown(f"**Found {len(trials)} recruiting trials**")
         
