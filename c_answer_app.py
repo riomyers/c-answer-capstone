@@ -107,12 +107,14 @@ def clean_text(text):
     for char, replacement in replacements.items():
         text = text.replace(char, replacement)
     
-    # 3. Normalize Unicode (turns "fancy" chars into standard chars)
-    # 4. Encode to ASCII and IGNORE errors (drops anything that can't be fixed)
-    # This guarantees the final string is 100% safe for FPDF.
+    # 3. Normalize Unicode and Encode to ASCII
     return unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
 
 def calculate_nearest_site(user_zip, locations):
+    """
+    Finds the closest study site to the user's zip code using pgeocode.
+    Returns: (Distance, Facility Name, City, State, Map URL)
+    """
     if not user_zip or not locations:
         return None, None, None, None, None
         
@@ -150,6 +152,7 @@ def calculate_nearest_site(user_zip, locations):
     return None, None, None, None, None
 
 def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
+    """Generates a clean PDF report."""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -161,7 +164,7 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf.cell(0, 10, "Intelligent Clinical Trial & Recovery Plan", ln=True, align='C')
     pdf.ln(10)
     
-    # Profile (Clean text, no box)
+    # Profile (Clean text)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 8, "Patient Profile Summary:", ln=True)
     pdf.set_font("Arial", '', 10)
@@ -196,7 +199,8 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(5)
         pdf.set_font("Arial", '', 10)
-        pdf.multi_cell(0, 6, clean_text(comparison_report))
+        clean_comp = clean_text(comparison_report).replace('? [', '- [')
+        pdf.multi_cell(0, 6, clean_comp)
         pdf.ln(10)
         
     # 3. Trial Details
@@ -290,6 +294,7 @@ def render_trial_card(trial):
             st.text_area("Raw Data", criteria, height=150, disabled=True, key=f"crit_{nct_id}")
         with c2:
             st.markdown("#### 🧠 AI Analysis")
+            
             existing_res = st.session_state.analysis_results.get(nct_id)
             if existing_res:
                 if "Status: Match" in existing_res: st.success(existing_res)
@@ -336,6 +341,20 @@ if 'form_kras' not in st.session_state: st.session_state.form_kras = False
 if 'form_ecog' not in st.session_state: st.session_state.form_ecog = "0 - Fully Active"
 if 'form_lines' not in st.session_state: st.session_state.form_lines = "None (1st Line)"
 if 'form_msi' not in st.session_state: st.session_state.form_msi = "Unknown"
+
+# --- SIDEBAR (CREDITS) ---
+with st.sidebar:
+    st.markdown("### ℹ️ About C-Answer")
+    st.markdown("""
+    **C-Answer** utilizes advanced AI to match patients with life-saving clinical trials.
+    
+    **Powered By:**
+    * Llama 3.3 (Groq)
+    * ClinicalTrials.gov API
+    * pgeocode
+    
+    *Privacy Notice: No data is stored.*
+    """)
 
 # --- MAIN HEADER ---
 st.markdown("""
@@ -392,7 +411,24 @@ with tab_search:
                     except Exception as e:
                         st.error(f"Error reading documents: {e}")
 
-    # 2. PATIENT FORM
+    # 2. DEMO & FORM
+    
+    # NEW: Demo Button outside Expander
+    if not st.session_state.search_performed:
+        c_demo, _ = st.columns([1, 4])
+        with c_demo:
+            if st.button("⚡ Load Demo Profile"):
+                st.session_state.form_diagnosis = "Colorectal Cancer"
+                st.session_state.form_metastasis = "Liver"
+                st.session_state.form_age = 55
+                st.session_state.form_sex = "Male"
+                st.session_state.user_zip = "90210"
+                st.session_state.form_ecog = "1 - Restricted"
+                st.session_state.form_lines = "1 Prior Line"
+                st.session_state.form_msi = "MSS (Stable)"
+                st.session_state.form_kras = True
+                st.rerun()
+
     with st.expander("Configure Patient Profile", expanded=is_expanded):
         with st.form("patient_form"):
             diagnosis = st.text_input("Primary Condition", value=st.session_state.form_diagnosis, placeholder="e.g. Colorectal Cancer")
@@ -404,7 +440,7 @@ with tab_search:
             with c2: 
                 sex = st.selectbox("Sex", ["Select...", "Male", "Female"], index=0 if st.session_state.form_sex == "Select..." else (1 if st.session_state.form_sex=="Male" else 2))
             with c3: 
-                zip_input = st.text_input("Zip Code (Optional)", max_chars=5, placeholder="e.g. 90210")
+                zip_input = st.text_input("Zip Code (Optional)", max_chars=5, placeholder="e.g. 90210", value=st.session_state.user_zip)
             
             st.write("**Clinical Details (Critical for Eligibility)**")
             c4, c5, c6 = st.columns(3)
@@ -428,9 +464,9 @@ with tab_search:
             st.session_state.search_performed = True
             st.session_state.analysis_results = {}
             st.session_state.comparison_report = "" 
-            st.session_state.user_zip = zip_input 
             
-            # Persist values
+            # Update state with form values
+            st.session_state.user_zip = zip_input 
             st.session_state.form_diagnosis = diagnosis
             st.session_state.form_metastasis = metastasis
             st.session_state.form_age = age
@@ -440,7 +476,6 @@ with tab_search:
             st.session_state.form_lines = lines
             st.session_state.form_msi = msi
             
-            # Handle empty fields for display logic
             age_s = str(age) if age else "Unknown"
             sex_s = sex if sex != "Select..." else "Unknown"
             zip_s = zip_input if zip_input else "Not provided"
