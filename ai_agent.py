@@ -62,21 +62,24 @@ def analyze_trial_eligibility(criteria_text, patient_profile):
 
 def generate_treatment_report(patient_profile):
     """
-    (CRITICAL FIX) Accepts a single 'patient_profile' string argument.
+    Generates a structured standard of care report.
     """
     client = get_groq_client()
     if not client: return "Error: API Key missing."
 
     system_prompt = """
-    You are a senior research oncologist. 
-    Generate a HIGHLY PERSONALIZED summary of the Standard of Care and Emerging Therapies 
-    specifically for this patient's unique profile (Age, ECOG, Prior Lines, MSI Status, Mutations).
+    You are a senior research oncologist. Generate a summary of the Treatment Landscape for this patient.
     
-    Rules:
-    1. If they are MSI-High, emphasize Immunotherapy (Keytruda/Opdivo).
-    2. If they are BRAF/KRAS mutant, mention targeted therapies.
-    3. If they are 2nd/3rd line, focus on refractory options (TAS-102, Regorafenib, Trials).
-    4. Use Markdown headers. Keep it hopeful but medically precise.
+    STRICT STRUCTURE REQUIRED:
+    You must output your response using exactly these three Markdown headers:
+    1. **Standard First-Line Treatments** (or Next-Line if patient has prior therapy)
+    2. **Targeted Therapies** (Reference specific mutations like KRAS/BRAF if present)
+    3. **Emerging Approaches** (Trials, Immunotherapy, Vaccines)
+    
+    CONTENT RULES:
+    - Personalize the advice based on the Patient Profile (Age, ECOG, MSI Status).
+    - If MSI-High, heavily emphasize Immunotherapy (Keytruda/Opdivo).
+    - Keep it concise, hopeful, and medically precise.
     """
     
     try:
