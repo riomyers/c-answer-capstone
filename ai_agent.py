@@ -10,10 +10,6 @@ def get_groq_client():
         return None
 
 def extract_patient_data(medical_text):
-    """
-    (NEW) Scans raw medical text and extracts structured profile data.
-    Returns a JSON object.
-    """
     client = get_groq_client()
     if not client: return None
 
@@ -23,13 +19,14 @@ def extract_patient_data(medical_text):
     
     {
         "diagnosis": "Primary cancer type (e.g. Colorectal Cancer)",
-        "metastasis": "List of metastasis sites (e.g. Liver, Lung) or empty string",
-        "age": 50 (integer estimate, or null if not found),
-        "sex": "Male" or "Female" (or "Select..." if unknown),
-        "kras_wild_type": true/false (true ONLY if 'Wild-type' or 'No mutation' is explicitly mentioned)
+        "metastasis": "List of metastasis sites or empty string",
+        "age": 50 (integer estimate or null),
+        "sex": "Male", "Female", or "Select...",
+        "kras_wild_type": true/false,
+        "ecog": "0 - Fully Active" (Best guess from context or default to 0),
+        "msi": "MSI-High" or "MSS" (or "Unknown"),
+        "prior_lines": "None" or "1 Prior Line" (Best guess)
     }
-    
-    If data is missing, use reasonable defaults or null. Return ONLY JSON.
     """
 
     try:
@@ -37,7 +34,7 @@ def extract_patient_data(medical_text):
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"REPORT TEXT:\n{medical_text[:6000]}"} # Limit text length
+                {"role": "user", "content": f"REPORT TEXT:\n{medical_text[:6000]}"}
             ],
             temperature=0, 
             response_format={"type": "json_object"}
@@ -63,18 +60,30 @@ def analyze_trial_eligibility(criteria_text, patient_profile):
     except Exception as e:
         return f"Error: {str(e)}"
 
-def generate_treatment_report(diagnosis, metastasis, biomarkers):
+def generate_treatment_report(patient_profile):
+    """
+    (CRITICAL FIX) Accepts a single 'patient_profile' string argument.
+    """
     client = get_groq_client()
     if not client: return "Error: API Key missing."
 
-    system_prompt = "Generate a high-level summary of Standard of Care and Emerging Therapies for this diagnosis. Use Markdown headers."
-    user_message = f"Diagnosis: {diagnosis}, Mets: {metastasis}, Biomarkers: {biomarkers}"
-
+    system_prompt = """
+    You are a senior research oncologist. 
+    Generate a HIGHLY PERSONALIZED summary of the Standard of Care and Emerging Therapies 
+    specifically for this patient's unique profile (Age, ECOG, Prior Lines, MSI Status, Mutations).
+    
+    Rules:
+    1. If they are MSI-High, emphasize Immunotherapy (Keytruda/Opdivo).
+    2. If they are BRAF/KRAS mutant, mention targeted therapies.
+    3. If they are 2nd/3rd line, focus on refractory options (TAS-102, Regorafenib, Trials).
+    4. Use Markdown headers. Keep it hopeful but medically precise.
+    """
+    
     try:
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}],
-            temperature=0.3, max_tokens=600
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": f"PATIENT PROFILE:\n{patient_profile}"}],
+            temperature=0.3, max_tokens=700
         )
         return completion.choices[0].message.content
     except Exception as e:
