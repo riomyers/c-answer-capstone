@@ -58,6 +58,17 @@ st.markdown("""
         border-color: #60A5FA;
     }
     
+    /* Section Headers */
+    .section-header {
+        margin-top: 30px;
+        margin-bottom: 15px;
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #94a3b8;
+        border-bottom: 1px solid #334155;
+        padding-bottom: 5px;
+    }
+    
     div.stButton > button {
         background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
         color: white;
@@ -82,10 +93,6 @@ def clean_text(text):
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 def calculate_nearest_site(user_zip, locations):
-    """
-    Finds the closest study site and builds a precise Google Maps link.
-    Returns: (Distance, Facility Name, City, State, Map URL)
-    """
     if not user_zip or not locations:
         return None, None, None, None, None
         
@@ -109,15 +116,11 @@ def calculate_nearest_site(user_zip, locations):
 
         if nearest_loc and min_km != float('inf'):
             miles = int(min_km * 0.621371)
-            
-            # Extract Facility Details
             facility = nearest_loc.get('facility', 'Study Site')
             city = nearest_loc.get('city', '')
             state = nearest_loc.get('state', '')
             zip_code = nearest_loc.get('zip', '')
             
-            # Create a robust search query for Google Maps
-            # "Facility Name, City, State Zip" works 99% of the time for finding the exact building
             query = f"{facility}, {city}, {state} {zip_code}".replace(" ", "+")
             maps_url = f"https://www.google.com/maps/search/?api=1&query={query}"
             
@@ -133,14 +136,12 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Header
     pdf.set_font("Arial", 'B', 24)
     pdf.cell(0, 10, "C-Answer", ln=True, align='C')
     pdf.set_font("Arial", 'I', 12)
     pdf.cell(0, 10, "Intelligent Clinical Trial & Recovery Plan", ln=True, align='C')
     pdf.ln(10)
     
-    # Profile
     pdf.set_fill_color(240, 240, 240) 
     pdf.rect(10, pdf.get_y(), 190, 20, 'F') 
     pdf.set_xy(12, pdf.get_y() + 5)
@@ -150,7 +151,6 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf.write(6, clean_text(patient_info))
     pdf.ln(20)
     
-    # 1. Landscape
     if treatment_report:
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(0, 10, "1. Treatment Landscape", ln=True)
@@ -170,7 +170,6 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
                 pdf.multi_cell(0, 6, line)
         pdf.ln(10)
         
-    # 2. Comparison
     if comparison_report:
         if pdf.get_y() > 200: pdf.add_page()
         pdf.set_font("Arial", 'B', 16)
@@ -181,7 +180,6 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         pdf.multi_cell(0, 6, clean_text(comparison_report))
         pdf.ln(10)
         
-    # 3. Trial Details
     if pdf.get_y() > 220: pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "3. Trial Details", ln=True)
@@ -190,15 +188,12 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     
     for nct_id, details in saved_trials.items():
         if pdf.get_y() > 200: pdf.add_page()
-        
         pdf.set_text_color(0, 51, 102) 
         pdf.set_font("Arial", 'B', 12)
         pdf.multi_cell(0, 8, f"{clean_text(details['title'])}")
-        
         pdf.set_text_color(100, 100, 100)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 6, f"Trial ID: {nct_id}", ln=True)
-        
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") 
@@ -234,6 +229,70 @@ def fetch_clinical_trials(condition, status="RECRUITING"):
     except Exception:
         return {}
 
+def render_trial_card(trial):
+    """Helper to render a single trial card."""
+    protocol = trial.get('protocolSection', {})
+    id_mod = protocol.get('identificationModule', {})
+    desc_mod = protocol.get('descriptionModule', {})
+    elig_mod = protocol.get('eligibilityModule', {})
+    
+    nct_id = id_mod.get('nctId', 'N/A')
+    title = id_mod.get('briefTitle', 'No Title')
+    summary = desc_mod.get('briefSummary', 'No summary.')
+    criteria = elig_mod.get('eligibilityCriteria', 'Not listed.')
+    
+    dist_data = trial.get('_dist_data')
+    dist_str = ""
+    if dist_data:
+        fac_name = dist_data['facility']
+        if len(fac_name) > 25: fac_name = fac_name[:25] + "..."
+        dist_str = f"<a href='{dist_data['url']}' target='_blank' class='distance-badge'>📍 {fac_name} ({dist_data['miles']} mi)</a>"
+    
+    with st.expander(f"{title}"):
+        st.markdown(f"""
+        <div style="margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <span class='status-badge'>Recruiting</span> 
+            <span style='color:#94a3b8; font-family: monospace;'>{nct_id}</span>
+            {dist_str}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.write(summary)
+        st.markdown("---")
+        
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            st.caption("Eligibility Criteria")
+            st.text_area("Raw Data", criteria, height=150, disabled=True, key=f"crit_{nct_id}")
+        with c2:
+            st.markdown("#### 🧠 AI Analysis")
+            existing_res = st.session_state.analysis_results.get(nct_id)
+            if existing_res:
+                if "Status: Match" in existing_res: st.success(existing_res)
+                elif "Status: No Match" in existing_res: st.error(existing_res)
+                else: st.warning(existing_res)
+            else:
+                st.info("Ready to analyze.")
+            
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("Analyze", key=f"btn_{nct_id}"):
+                    with st.spinner("Analyzing..."):
+                        res = analyze_trial_eligibility(criteria, st.session_state.patient_profile_str)
+                        st.session_state.analysis_results[nct_id] = res
+                        st.rerun()
+            with b2:
+                if nct_id in st.session_state.saved_trials:
+                    st.button("Saved ✅", disabled=True, key=f"save_{nct_id}")
+                else:
+                    if st.button("Save ⭐", key=f"save_{nct_id}"):
+                        st.session_state.saved_trials[nct_id] = {
+                            "title": title,
+                            "summary": summary,
+                            "match_status": st.session_state.analysis_results.get(nct_id, "Not Analyzed")
+                        }
+                        st.rerun()
+
 # --- STATE MANAGEMENT ---
 if 'studies' not in st.session_state: st.session_state.studies = []
 if 'analysis_results' not in st.session_state: st.session_state.analysis_results = {}
@@ -267,17 +326,14 @@ with tab_search:
         with st.form("patient_form"):
             diagnosis = st.text_input("Primary Condition", value="", placeholder="e.g. Colorectal Cancer")
             metastasis = st.text_input("Metastasis Location", value="", placeholder="e.g. Liver, Lung")
-            
             c1, c2, c3 = st.columns(3)
             with c1: age = st.number_input("Age", value=None, placeholder="e.g. 35", step=1)
             with c2: sex = st.selectbox("Sex", ["Select...", "Male", "Female"])
             with c3: zip_input = st.text_input("Zip Code (Optional)", max_chars=5, placeholder="e.g. 90210")
-            
             st.write("**Biomarkers & Filters**")
             c4, c5 = st.columns(2)
             with c4: kras = st.checkbox("KRAS Wild-type", value=False)
             with c5: phase1 = st.checkbox("Exclude Phase 1", value=False)
-            
             spacer(10)
             submitted = st.form_submit_button("Find Matching Trials", type="primary")
 
@@ -289,128 +345,68 @@ with tab_search:
             st.session_state.analysis_results = {}
             st.session_state.comparison_report = "" 
             st.session_state.user_zip = zip_input 
-            
             age_s = str(age) if age else "Unknown"
             sex_s = sex if sex != "Select..." else "Unknown"
             zip_s = zip_input if zip_input else "Not provided"
-            
             st.session_state.patient_profile_str = f"{age_s}, {sex_s}, {diagnosis}, Mets: {metastasis}, Zip: {zip_s}"
-            
             search_term = f"{diagnosis} {metastasis}" if metastasis.strip() else diagnosis
             
             with st.spinner(f"Scanning ClinicalTrials.gov for '{search_term}'..."):
                 data = fetch_clinical_trials(search_term)
                 raw_studies = data.get('studies', [])
                 
-                # --- SORTING LOGIC ---
-                processed_studies = []
+                # PROCESS AND SORT
+                processed = []
                 for study in raw_studies:
                     dist_miles = float('inf') 
                     dist_data = None
-                    
                     if zip_input:
                         protocol = study.get('protocolSection', {})
                         loc_mod = protocol.get('contactsLocationsModule', {})
                         loc_list = loc_mod.get('locations', [])
-                        
-                        # Get detailed address info
                         miles, fac, city, state, url = calculate_nearest_site(zip_input, loc_list)
                         if miles is not None:
                             dist_miles = miles
-                            dist_data = {
-                                "miles": miles, 
-                                "facility": fac,
-                                "city": city, 
-                                "state": state, 
-                                "url": url
-                            }
+                            dist_data = {"miles": miles, "facility": fac, "city": city, "state": state, "url": url}
                     
                     study['_sort_distance'] = dist_miles
                     study['_dist_data'] = dist_data
-                    processed_studies.append(study)
+                    processed.append(study)
                 
+                # Split into Groups if zip provided
                 if zip_input:
-                    processed_studies.sort(key=lambda x: x['_sort_distance'])
+                    # Sort primary list by distance
+                    processed.sort(key=lambda x: x['_sort_distance'])
                 
-                st.session_state.studies = processed_studies
-                
+                st.session_state.studies = processed
                 biomarkers = "KRAS Wild-type" if kras else "None specified"
                 st.session_state.treatment_report = generate_treatment_report(diagnosis, metastasis, biomarkers)
             
             st.rerun()
 
-    # RESULTS
+    # RESULTS RENDERING
     trials = st.session_state.studies
     if trials:
-        col1, col2 = st.columns([3, 1])
-        col1.markdown(f"**Found {len(trials)} recruiting trials**")
-        
-        for trial in trials:
-            protocol = trial.get('protocolSection', {})
-            id_mod = protocol.get('identificationModule', {})
-            desc_mod = protocol.get('descriptionModule', {})
-            elig_mod = protocol.get('eligibilityModule', {})
+        if st.session_state.user_zip:
+            # GROUPED DISPLAY
+            scored = [t for t in trials if t['_sort_distance'] != float('inf')]
+            unscored = [t for t in trials if t['_sort_distance'] == float('inf')]
             
-            dist_data = trial.get('_dist_data')
-            dist_str = ""
+            if scored:
+                st.markdown(f"<div class='section-header'>📍 Nearest to You ({len(scored)})</div>", unsafe_allow_html=True)
+                for t in scored: render_trial_card(t)
             
-            # UPDATED: Display facility name if available
-            if dist_data:
-                # Truncate facility name if too long to keep badge clean
-                fac_name = dist_data['facility']
-                if len(fac_name) > 25: fac_name = fac_name[:25] + "..."
+            if unscored:
+                st.markdown(f"<div class='section-header'>🌎 Other Recruiting Trials ({len(unscored)})</div>", unsafe_allow_html=True)
+                for t in unscored: render_trial_card(t)
                 
-                dist_str = f"<a href='{dist_data['url']}' target='_blank' class='distance-badge'>📍 {fac_name} ({dist_data['miles']} mi)</a>"
-            
-            nct_id = id_mod.get('nctId', 'N/A')
-            title = id_mod.get('briefTitle', 'No Title')
-            summary = desc_mod.get('briefSummary', 'No summary.')
-            criteria = elig_mod.get('eligibilityCriteria', 'Not listed.')
-            
-            with st.expander(f"{title}"):
-                st.markdown(f"""
-                <div style="margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
-                    <span class='status-badge'>Recruiting</span> 
-                    <span style='color:#94a3b8; font-family: monospace;'>{nct_id}</span>
-                    {dist_str}
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.write(summary)
-                st.markdown("---")
-                
-                c1, c2 = st.columns([1, 1])
-                with c1:
-                    st.caption("Eligibility Criteria")
-                    st.text_area("Raw Data", criteria, height=150, disabled=True, key=f"crit_{nct_id}")
-                with c2:
-                    st.markdown("#### 🧠 AI Analysis")
-                    existing_res = st.session_state.analysis_results.get(nct_id)
-                    if existing_res:
-                        if "Status: Match" in existing_res: st.success(existing_res)
-                        elif "Status: No Match" in existing_res: st.error(existing_res)
-                        else: st.warning(existing_res)
-                    else:
-                        st.info("Ready to analyze.")
-                    
-                    b1, b2 = st.columns(2)
-                    with b1:
-                        if st.button("Analyze", key=f"btn_{nct_id}"):
-                            with st.spinner("Analyzing..."):
-                                res = analyze_trial_eligibility(criteria, st.session_state.patient_profile_str)
-                                st.session_state.analysis_results[nct_id] = res
-                                st.rerun()
-                    with b2:
-                        if nct_id in st.session_state.saved_trials:
-                            st.button("Saved ✅", disabled=True, key=f"save_{nct_id}")
-                        else:
-                            if st.button("Save ⭐", key=f"save_{nct_id}"):
-                                st.session_state.saved_trials[nct_id] = {
-                                    "title": title,
-                                    "summary": summary,
-                                    "match_status": st.session_state.analysis_results.get(nct_id, "Not Analyzed")
-                                }
-                                st.rerun()
+            if not scored and not unscored:
+                st.warning("No trials found matching your search.")
+        else:
+            # STANDARD DISPLAY (No Zip)
+            col1, col2 = st.columns([3, 1])
+            col1.markdown(f"**Found {len(trials)} recruiting trials**")
+            for t in trials: render_trial_card(t)
 
 # ==========================================
 # TAB 2: TREATMENT LANDSCAPE
@@ -428,39 +424,21 @@ with tab_insights:
 # ==========================================
 with tab_saved:
     saved = st.session_state.saved_trials
-    
     st.markdown("### 📁 Saved Trials Report")
-
     if saved:
         st.success(f"You have saved {len(saved)} trials.")
-        
-        # COMPARATOR BUTTON
         if len(saved) > 1:
             if st.button("⚖️ Compare Selected Trials (AI)", type="primary"):
                 with st.spinner("Generating comparison matrix..."):
                     st.session_state.comparison_report = compare_trials(saved)
-        
-        # DISPLAY COMPARISON IF EXISTS
         if st.session_state.comparison_report:
             st.markdown("---")
             st.markdown("#### ⚖️ AI Comparison Matrix")
             st.markdown(st.session_state.comparison_report)
             st.markdown("---")
-
-        # PDF DOWNLOAD
-        pdf_bytes = create_pdf(
-            saved, 
-            st.session_state.patient_profile_str, 
-            st.session_state.treatment_report,
-            st.session_state.comparison_report
-        )
         
-        st.download_button(
-            label="📄 Download PDF Report for Doctor",
-            data=pdf_bytes,
-            file_name="C-Answer_Report.pdf",
-            mime="application/pdf"
-        )
+        pdf_bytes = create_pdf(saved, st.session_state.patient_profile_str, st.session_state.treatment_report, st.session_state.comparison_report)
+        st.download_button(label="📄 Download PDF Report for Doctor", data=pdf_bytes, file_name="C-Answer_Report.pdf", mime="application/pdf")
         
         st.markdown("---")
         for nid, det in saved.items():
@@ -471,10 +449,4 @@ with tab_saved:
                 st.rerun()
     else:
         st.info("Your shortlist is currently empty.")
-        st.markdown("""
-        #### How to create your report:
-        1. Go to the **🔍 Trial Search** tab.
-        2. Run a search for your condition.
-        3. Click the **Save ⭐** button on any trial.
-        4. Return here to compare them side-by-side.
-        """)
+        st.markdown("#### How to create your report:\n1. Go to the **🔍 Trial Search** tab.\n2. Run a search.\n3. Click **Save ⭐**.\n4. Return here to compare.")
