@@ -1,5 +1,7 @@
 import streamlit as st
 import requests
+import pgeocode
+import pandas as pd
 from fpdf import FPDF
 from ai_agent import analyze_trial_eligibility, generate_treatment_report, compare_trials
 
@@ -37,6 +39,23 @@ st.markdown("""
         border: 1px solid rgba(16, 185, 129, 0.3);
     }
     
+    .distance-badge {
+        background-color: rgba(96, 165, 250, 0.1); 
+        color: #93C5FD; 
+        padding: 4px 12px;
+        border-radius: 99px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        border: 1px solid rgba(96, 165, 250, 0.3);
+        margin-left: 10px;
+        text-decoration: none; /* No underline for link */
+    }
+    
+    .distance-badge:hover {
+        background-color: rgba(96, 165, 250, 0.2);
+        color: white;
+    }
+    
     div.stButton > button {
         background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
         color: white;
@@ -59,6 +78,50 @@ def clean_text(text):
     replacements = {'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2013': '-', '\u2014': '-', '\u2022': '*', '\u2026': '...'}
     for char, replacement in replacements.items(): text = text.replace(char, replacement)
     return text.encode('latin-1', 'replace').decode('latin-1')
+
+def calculate_nearest_site(user_zip, locations):
+    """
+    Finds the closest study site to the user's zip code.
+    Returns: (Distance in Miles, City, State, Google Maps URL)
+    """
+    if not user_zip or not locations:
+        return None, None, None, None
+        
+    try:
+        dist = pgeocode.GeoDistance('us')
+        min_km = float('inf')
+        nearest_loc = None
+        
+        for loc in locations:
+            if loc.get('country') != 'United States':
+                continue
+                
+            site_zip = loc.get('zip')
+            if site_zip:
+                clean_zip = str(site_zip)[:5]
+                d_km = dist.query_postal_code(user_zip, clean_zip)
+                
+                if d_km is not None and not pd.isna(d_km) and d_km < min_km:
+                    min_km = d_km
+                    nearest_loc = loc
+
+        if nearest_loc and min_km != float('inf'):
+            miles = int(min_km * 0.621371)
+            city = nearest_loc.get('city')
+            state = nearest_loc.get('state')
+            
+            # Construct Google Maps Link
+            # Query format: "City, State Zip"
+            zip_code = nearest_loc.get('zip', '')
+            query = f"{city}, {state} {zip_code}".replace(" ", "+")
+            maps_url = f"https://www.google.com/maps/search/?api=1&query={query}"
+            
+            return miles, city, state, maps_url
+            
+    except Exception:
+        return None, None, None, None
+        
+    return None, None, None, None
 
 def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf = FPDF()
@@ -92,10 +155,7 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         for line in lines:
             line = clean_text(line).strip()
             if not line: continue
-            
-            # Page Break Check for long report sections
             if pdf.get_y() > 250: pdf.add_page()
-            
             if (len(line) < 60 and not line.endswith('.') and not line.startswith('*')):
                 pdf.ln(6)
                 pdf.set_font("Arial", 'B', 11)
@@ -107,9 +167,7 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
         
     # 2. Comparison
     if comparison_report:
-        # Aggressive page break before starting this section
         if pdf.get_y() > 200: pdf.add_page()
-            
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(0, 10, "2. AI Comparison of Selected Trials", ln=True)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
@@ -126,42 +184,32 @@ def create_pdf(saved_trials, patient_info, treatment_report, comparison_report):
     pdf.ln(5)
     
     for nct_id, details in saved_trials.items():
-        # SAFETY CHECK: If we are past 200mm (approx 3/4 down page), 
-        # start a new page so the whole trial block stays together.
-        if pdf.get_y() > 200:
-            pdf.add_page()
+        if pdf.get_y() > 200: pdf.add_page()
         
-        # Title
         pdf.set_text_color(0, 51, 102) 
         pdf.set_font("Arial", 'B', 12)
         pdf.multi_cell(0, 8, f"{clean_text(details['title'])}")
         
-        # ID
         pdf.set_text_color(100, 100, 100)
         pdf.set_font("Arial", 'B', 10)
         pdf.cell(0, 6, f"Trial ID: {nct_id}", ln=True)
         
-        # Summary
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", '', 10)
         pdf.multi_cell(0, 6, clean_text(details['summary'][:1000]) + "...") 
         pdf.ln(4)
         
-        # AI Match Reason
         if details.get('match_status'):
-            # Only start this box if we have space, otherwise break page
             if pdf.get_y() > 250: pdf.add_page()
-            
             pdf.set_fill_color(245, 255, 250) 
             pdf.set_font("Arial", 'B', 10)
             pdf.cell(0, 6, "AI Match Analysis:", ln=True, fill=True)
-            
             pdf.set_font("Arial", '', 10)
             status_text = details['match_status'].replace("Status: ", "")
             pdf.multi_cell(0, 6, clean_text(status_text), fill=True)
         
         pdf.ln(5)
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Clean separator
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y()) 
         pdf.ln(8)
         
     return pdf.output(dest='S').encode('latin-1')
@@ -189,6 +237,7 @@ if 'treatment_report' not in st.session_state: st.session_state.treatment_report
 if 'comparison_report' not in st.session_state: st.session_state.comparison_report = ""
 if 'patient_profile_str' not in st.session_state: st.session_state.patient_profile_str = ""
 if 'search_performed' not in st.session_state: st.session_state.search_performed = False
+if 'user_zip' not in st.session_state: st.session_state.user_zip = ""
 
 # --- HEADER ---
 st.markdown("""
@@ -214,14 +263,15 @@ with tab_search:
             diagnosis = st.text_input("Primary Condition", value="", placeholder="e.g. Colorectal Cancer")
             metastasis = st.text_input("Metastasis Location", value="", placeholder="e.g. Liver, Lung")
             
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             with c1: age = st.number_input("Age", value=None, placeholder="e.g. 35", step=1)
             with c2: sex = st.selectbox("Sex", ["Select...", "Male", "Female"])
+            with c3: zip_input = st.text_input("Zip Code (Optional)", max_chars=5, placeholder="e.g. 90210")
             
             st.write("**Biomarkers & Filters**")
-            c3, c4 = st.columns(2)
-            with c3: kras = st.checkbox("KRAS Wild-type", value=False)
-            with c4: phase1 = st.checkbox("Exclude Phase 1", value=False)
+            c4, c5 = st.columns(2)
+            with c4: kras = st.checkbox("KRAS Wild-type", value=False)
+            with c5: phase1 = st.checkbox("Exclude Phase 1", value=False)
             
             spacer(10)
             submitted = st.form_submit_button("Find Matching Trials", type="primary")
@@ -233,10 +283,13 @@ with tab_search:
             st.session_state.search_performed = True
             st.session_state.analysis_results = {}
             st.session_state.comparison_report = "" 
+            st.session_state.user_zip = zip_input 
             
             age_s = str(age) if age else "Unknown"
             sex_s = sex if sex != "Select..." else "Unknown"
-            st.session_state.patient_profile_str = f"{age_s}, {sex_s}, {diagnosis}, Mets: {metastasis}"
+            zip_s = zip_input if zip_input else "Not provided"
+            
+            st.session_state.patient_profile_str = f"{age_s}, {sex_s}, {diagnosis}, Mets: {metastasis}, Zip: {zip_s}"
             
             search_term = f"{diagnosis} {metastasis}" if metastasis.strip() else diagnosis
             
@@ -261,13 +314,31 @@ with tab_search:
             desc_mod = protocol.get('descriptionModule', {})
             elig_mod = protocol.get('eligibilityModule', {})
             
+            # --- LOCATION LOGIC ---
+            locations_module = protocol.get('contactsLocationsModule', {})
+            location_list = locations_module.get('locations', [])
+            
+            dist_str = ""
+            if st.session_state.user_zip and location_list:
+                miles, city, state, map_url = calculate_nearest_site(st.session_state.user_zip, location_list)
+                if miles is not None:
+                    # Added 'target=_blank' to open in new tab
+                    dist_str = f"<a href='{map_url}' target='_blank' class='distance-badge'>📍 {city}, {state} ({miles} mi)</a>"
+            
             nct_id = id_mod.get('nctId', 'N/A')
             title = id_mod.get('briefTitle', 'No Title')
             summary = desc_mod.get('briefSummary', 'No summary.')
             criteria = elig_mod.get('eligibilityCriteria', 'Not listed.')
             
             with st.expander(f"{title}"):
-                st.markdown(f"<span class='status-badge'>Recruiting</span> <span style='color:#94a3b8; margin-left:10px;'>{nct_id}</span>", unsafe_allow_html=True)
+                st.markdown(f"""
+                <div style="margin-bottom: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <span class='status-badge'>Recruiting</span> 
+                    <span style='color:#94a3b8; font-family: monospace;'>{nct_id}</span>
+                    {dist_str}
+                </div>
+                """, unsafe_allow_html=True)
+                
                 st.write(summary)
                 st.markdown("---")
                 
