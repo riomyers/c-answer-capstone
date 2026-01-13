@@ -122,22 +122,20 @@ if 'active_nct_id' not in st.session_state:
 if 'search_performed' not in st.session_state:
     st.session_state.search_performed = False
 
-# --- HEADER SECTION (With Restored Ribbon) ---
-col_logo, col_title = st.columns([1, 8])
+# --- HEADER SECTION (FLEXBOX ALIGNMENT) ---
+st.markdown("""
+<div style="display: flex; align-items: center; margin-bottom: 20px;">
+    <div style="font-size: 4rem; margin-right: 20px; line-height: 1;">🎗️</div>
+    <div>
+        <h1 style="margin: 0; padding: 0; font-size: 3.5rem; line-height: 1.2;">C-Answer</h1>
+        <p style="margin: 5px 0 0 0; opacity: 0.8; font-size: 1.1rem; font-family: 'Lato', sans-serif;">
+            Intelligent Clinical Trial Matching & Recovery Planning
+        </p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-with col_logo:
-    # Large Elegant Ribbon
-    st.markdown("<div style='font-size: 3.5rem; line-height: 1; text-align: center;'>🎗️</div>", unsafe_allow_html=True)
-
-with col_title:
-    st.markdown("""
-    <h1 style='margin-bottom: 0px; font-size: 3rem;'>C-Answer</h1>
-    <p style='font-size: 1.1rem; opacity: 0.8; margin-top: 5px; font-family: "Lato", sans-serif;'>
-        Intelligent Clinical Trial Matching & Recovery Planning
-    </p>
-    """, unsafe_allow_html=True)
-
-spacer(20)
+spacer(10)
 
 # --- SMART SEARCH PANEL ---
 is_expanded = not st.session_state.search_performed
